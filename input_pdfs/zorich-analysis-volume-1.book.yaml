@@ -1,0 +1,20 @@
+# 来源：用户指定的 Downloads 中卓里奇《数学分析》第七版第一卷。
+book:
+  title: "数学分析（第七版）第一卷"
+  author: "V. A. 卓里奇"
+
+# 保留全部原 PDF 页面；不沿用其他书籍删除封面/版权页的配置。
+exclude_pages: []
+
+heading_rules:
+  center_tolerance: 0.04
+  same_height_tolerance: 0.12
+
+# 最大标题层次为一级，后续从大到小编号；样式沿用当前转换流程。
+heading_layout:
+  standalone_levels: [1]
+  centered_levels: [1, 2]
+  page_break_after_levels: [2, 3]
+  label_title_gap_em: 1.0
+
+overrides: {}

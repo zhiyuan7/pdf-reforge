@@ -1,0 +1,128 @@
+\NeedsTeXFormat{LaTeX2e}
+\ProvidesPackage{book-style}[2026/10/02 Source-preserving LADR style]
+\RequirePackage{needspace,longtable,adjustbox,mathtools,arydshln}
+\definecolor{structurecolor}{HTML}{3C71B7}
+\definecolor{main}{HTML}{00A652}
+\definecolor{second}{HTML}{FF8618}
+\definecolor{third}{HTML}{00AEF7}
+\definecolor{winered}{HTML}{800000}
+\geometry{paperwidth=176mm,paperheight=250mm,left=12.7mm,right=12.7mm,
+  top=14mm,bottom=15mm,headheight=13pt,headsep=6pt,footskip=22pt}
+\setlength{\headwidth}{\textwidth}
+\hypersetup{colorlinks=true,linkcolor=winered,urlcolor=winered,citecolor=winered,
+  linktoc=all,bookmarksnumbered=true,bookmarksopen=true,bookmarksdepth=4}
+\patchcmd{\tableofcontents}{linkcolor=black}{linkcolor=winered}{}{}
+\setcounter{tocdepth}{3}
+\setcounter{secnumdepth}{-1}
+\let\cleardoublepage\clearpage
+\xeCJKDeclareCharClass{CJK}{"2460 -> "24FF,"25A0 -> "25FF}
+\AtBeginDocument{\fontsize{10.5pt}{16.4pt}\selectfont\setlength{\parindent}{2\ccwd}}
+\setlength{\parskip}{0pt}
+\AtBeginDocument{\tolerance=9999\emergencystretch=6em}
+\raggedbottom
+\clubpenalty=10000
+\widowpenalty=10000
+\newsavebox{\BookMathBox}
+\newdimen\BookMathWidth
+\NewDocumentCommand{\BookMath}{O{0pt} m}{%
+ \begingroup\BookMathWidth=\dimexpr\linewidth-#1\relax
+ \sbox{\BookMathBox}{$\displaystyle #2$}%
+ \ifdim\wd\BookMathBox>\BookMathWidth
+  \resizebox{\BookMathWidth}{!}{\usebox{\BookMathBox}}%
+ \else\usebox{\BookMathBox}\fi\endgroup}
+\providecommand{\BookFooter}{}
+\newcommand{\BookAnchor}[1]{\hypertarget{#1}{}\def\@currentHref{#1}}
+\newcommand{\BookLink}[2]{\hyperlink{#1}{#2}}
+\fancyhf{}
+\fancyhead[CE]{\color{structurecolor}\small\leftmark}
+\fancyhead[CO]{\color{structurecolor}\small\rightmark}
+\fancyhead[LE,RO]{\color{structurecolor}\small\thepage}
+\fancyfoot[C]{\color{gray}\fontsize{8pt}{10pt}\selectfont\BookFooter}
+\renewcommand{\headrulewidth}{0.4pt}
+\renewcommand{\headrule}{\color{structurecolor}\hrule height0.4pt width\headwidth}
+\fancypagestyle{plain}{\fancyhf{}\renewcommand{\headrulewidth}{0pt}\renewcommand{\headrule}{}
+ \fancyfoot[RO,LE]{\color{structurecolor}\small\thepage}
+ \fancyfoot[C]{\color{gray}\fontsize{8pt}{10pt}\selectfont\BookFooter}}
+\titleformat{\chapter}[block]{\filcenter\color{structurecolor}\sffamily\heiti\bfseries\fontsize{18pt}{24pt}\selectfont}{}{0pt}{}
+\titlespacing*{\chapter}{0pt}{0pt}{24pt}
+% Public heading levels are numbered from 1 (largest in this book).
+\newcommand{\BookHeadingGap}{\hspace{1em}}
+\NewDocumentCommand{\BookHeadingLayout}{m m m}{%
+ \expandafter\def\csname BookHeadingAlign@#1\endcsname{#2}%
+ \expandafter\def\csname BookHeadingSingle@#1\endcsname{#3}}
+\BookHeadingLayout{1}{center}{1}\BookHeadingLayout{2}{center}{0}
+\BookHeadingLayout{3}{left}{0}\BookHeadingLayout{4}{left}{0}
+\BookHeadingLayout{5}{left}{0}\BookHeadingLayout{6}{left}{0}
+\newcommand{\BookHeadingSize}[1]{%
+ \ifcase#1\relax\or\fontsize{24pt}{32pt}\or\fontsize{18pt}{24pt}%
+ \or\fontsize{15pt}{21pt}\or\fontsize{12pt}{18pt}%
+ \else\fontsize{10.5pt}{16.4pt}\fi\selectfont}
+\newcommand{\BookHeadingTOCType}[1]{%
+ \ifcase#1\relax\or\def\BookTOCType{part}\or\def\BookTOCType{chapter}%
+ \or\def\BookTOCType{section}\or\def\BookTOCType{subsection}%
+ \or\def\BookTOCType{subsubsection}\else\def\BookTOCType{paragraph}\fi}
+\newsavebox{\BookHeadingMeasure}
+\newcommand{\BookStandaloneTitle}[1]{%
+ \sbox{\BookHeadingMeasure}{#1}%
+ \ifdim\wd\BookHeadingMeasure>\linewidth
+  \parbox{0.7\linewidth}{\ifx\BookHeadingAlign\BookCentered\centering\fi#1}%
+ \else#1\fi}
+\NewDocumentCommand{\BookHeading}{m m m +O{} +O{}}{%
+ \def\BookTOCTitle{#2}\if\relax\detokenize{#5}\relax\else\def\BookTOCTitle{#5}\fi
+ \BookHeadingTOCType{#1}%
+ \edef\BookHeadingAlign{\csname BookHeadingAlign@#1\endcsname}%
+ \def\BookCentered{center}%
+ \ifnum\csname BookHeadingSingle@#1\endcsname=1\relax
+  \clearpage\thispagestyle{plain}\null\vfill\markboth{#2}{#2}%
+  {\ifx\BookHeadingAlign\BookCentered\centering\fi
+   \color{structurecolor}\sffamily\heiti\bfseries\BookHeadingSize{#1}%
+   \noindent\BookAnchor{#3}\addcontentsline{toc}{\BookTOCType}{\BookTOCTitle}#4\BookStandaloneTitle{#2}\par}%
+  \vfill\null\clearpage
+ \else
+  \par\ifnum#1<3\relax\Needspace{7\baselineskip}\vspace{16pt}%
+  \else\ifnum#1<5\relax\Needspace{5\baselineskip}\vspace{10pt}%
+  \else\Needspace{3\baselineskip}\vspace{5pt}\fi\fi
+  \ifnum#1<3\relax\thispagestyle{plain}\markboth{#2}{#2}%
+  \else\ifnum#1=3\relax\markright{#2}\fi\fi
+  \BookAnchor{#3}\addcontentsline{toc}{\BookTOCType}{\BookTOCTitle}%
+  {\ifx\BookHeadingAlign\BookCentered\centering\fi
+   \color{structurecolor}\sffamily\heiti\bfseries\BookHeadingSize{#1}%
+   \noindent #4#2\par}\nopagebreak[4]%
+  \ifnum#1<3\relax\vspace{12pt}\else\ifnum#1<5\relax\vspace{6pt}\else\vspace{3pt}\fi\fi
+ \fi}
+\tcbset{bookcommon/.style={enhanced,breakable,fontupper=\normalfont,
+  coltitle=white,fonttitle=\sffamily\heiti\bfseries,boxrule=0.5pt,arc=1pt,left=6pt,right=6pt,
+  top=6pt,bottom=6pt,before skip=9pt,after skip=9pt,
+  title after break={\textnormal{（续）}},
+  attach boxed title to top left={xshift=6pt,yshift=-2pt},
+  varwidth boxed title*=-18pt,
+  boxed title style={boxrule=0pt,arc=0pt},
+  overlay last={\node[anchor=south east,inner sep=3pt,font=\tiny] at (frame.south east) {\textcolor{gray}{\ensuremath{\square}}};}},
+  bookgreen/.style={bookcommon,colframe=main,colback=main!5,colbacktitle=main},
+  bookorange/.style={bookcommon,colframe=second,colback=second!5,colbacktitle=second},
+  bookcyan/.style={bookcommon,colframe=third,colback=third!5,colbacktitle=third}}
+\newtcolorbox{BookDefinition}[1]{bookgreen,title={#1}}
+\newtcolorbox{BookTheorem}[1]{bookorange,title={#1}}
+\newtcolorbox{BookAlgorithm}[1]{bookcyan,title={#1}}
+\newtcolorbox{BookFormula}[1]{bookcyan,title={#1}}
+\newtcolorbox{BookExample}[1]{enhanced,breakable,colback=white,colframe=white,
+  boxrule=0pt,sharp corners,left=0pt,right=0pt,top=4pt,bottom=4pt,
+  borderline north={0.5pt}{0pt}{black},borderline south={2pt}{0pt}{black},
+  title={#1},coltitle=black,colbacktitle=white,fonttitle=\sffamily\heiti\bfseries,titlerule=0pt,
+  before skip=10pt,after skip=10pt,title after break={（例题续）}}
+\newtcolorbox{BookRemark}[1]{enhanced,breakable,colback=gray!10,colframe=gray!10,
+  boxrule=0pt,left=5pt,right=5pt,top=4pt,bottom=4pt,before skip=6pt,after skip=6pt,
+  before upper={\BookCaptionFont\if\relax\detokenize{#1}\relax\else\textbf{#1}\par\fi}}
+\newenvironment{BookProof}[1]{\par\noindent\textbf{\color{second}#1}\quad}{\par}
+\newenvironment{BookSolution}[1]{\par\noindent\textbf{#1}\quad}{\par}
+\newenvironment{BookExercise}[1]{\par\noindent\textbf{#1}\quad}{\par}
+\NewDocumentEnvironment{BookFootnote}{m+b}{\begingroup
+ \renewcommand{\thefootnote}{}\footnotetext{\noindent #1#2}\endgroup}{}
+\newenvironment{BookBibliography}[1]{\par\noindent\if\relax\detokenize{#1}\relax\else #1\quad\fi}{\par}
+\newcommand{\BookCaption}[1]{\par\begingroup\BookCaptionFont\centering\noindent #1\par\endgroup}
+\newcommand{\BookImage}[2][\linewidth]{\par\noindent\makebox[\linewidth][c]{\includegraphics[width=#1,height=0.65\textheight,keepaspectratio]{#2}}\par}
+% Deferred assets may occupy the next page top while later paragraphs fill this page.
+\setcounter{topnumber}{8}\setcounter{totalnumber}{8}
+\renewcommand{\topfraction}{0.95}\renewcommand{\textfraction}{0.05}
+\renewcommand{\floatpagefraction}{0.70}
+\pagestyle{fancy}

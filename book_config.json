@@ -1,0 +1,45 @@
+{
+  "base_url": "https://api.deepseek.com",
+  "model": "deepseek-flash",
+  "api_key_env": "DEEPSEEK_API_KEY",
+  "thinking": "enabled",
+  "concurrency": 4,
+  "attempts": 3,
+  "timeout_seconds": 180,
+  "max_tokens": 32768,
+  "image_dpi": 150,
+  "toc_pages": [],
+  "numbered_object_labels": {},
+  "layout_rules": {
+    "top_margin": 0.12,
+    "bottom_margin": 0.12,
+    "position_tolerance": 0.025,
+    "repeat_page_gap": 4,
+    "min_repeat_pages": 2
+  },
+  "xelatex": "auto",
+  "latexmk": "auto",
+  "main_font": "Noto Serif CJK SC",
+  "heading_font": "Noto Sans CJK SC",
+  "caption_font_file": "models/font_candidates/LxgwWenkaiGB/LXGWWenKaiGB-Regular.ttf",
+  "mineru_python": ".venv/bin/python",
+  "mineru_tier": "standard",
+  "mineru_model_source": "auto",
+  "mineru_ocr_mode": "auto",
+  "shared_cache_dirs": [],
+  "pricing": {
+    "model": "deepseek-flash",
+    "currency": "USD",
+    "checked_on": "2026-10-03",
+    "peak": {
+      "input_cached": 0.006,
+      "input_uncached": 0.3,
+      "output": 1.2
+    },
+    "off_peak": {
+      "input_cached": 0.003,
+      "input_uncached": 0.15,
+      "output": 0.6
+    }
+  }
+}

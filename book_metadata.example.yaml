@@ -1,0 +1,35 @@
+# 复制到 PDF 同目录，命名为 <PDF文件名>.book.yaml；也可用 --metadata 指定。
+# 书名和作者只读取这里的输入，不从模型、文件名或 PDF 元数据推断。
+book:
+  title: "请填写书名"
+  author: "请填写作者"
+
+# 最终书稿直接丢弃这些原 PDF 物理页（从 1 开始），不要填书内印刷页码。
+# 例如原封面、版权、献词： [1, 2, 3, 4, 5]。不默认删除未知书籍的前五页。
+exclude_pages: []
+
+heading_rules:
+  center_tolerance: 0.04       # 相对于正文区域中心的偏差 / 页面宽度
+  same_height_tolerance: 0.12  # 同类标题的相对文字高度容差
+
+# 标题的最大层级称为一级，依次为二级、三级……，不用按“章/节”等名称配置。
+# 修改这些数字即可选择排版规则。空列表 [] 表示不对任何层级应用该规则。
+heading_layout:
+  standalone_levels: [1]          # 独占一页；正文从下一页开始
+  centered_levels: [1, 2]         # 居中，其余层级靠左
+  page_break_after_levels: [2, 3]  # 整个标题子树结束后换页；首次进入子标题连续
+  label_title_gap_em: 1.0         # 编号与标题间距，单位 em；0 为不留额外间距
+
+# 程序不能确认时会保留普通正文并列入疑点；可按报告中的 group ID 复核。
+# 明确的人工修改才写入 overrides，不自动用模型补齐。
+overrides: {}
+# 示例：
+# overrides:
+#   p000053-b000000:
+#     kind: chapter             # part/chapter/section/subsection/subsubsection/paragraph
+#     title: 感知机
+#     number: "2"
+#     start_offset: 0
+#     end_offset: 8             # 可选，混合标题/正文块须精确指定字符范围
+#   p000100-b000010:
+#     kind: ignore              # 仅不作为标题，原文仍保留

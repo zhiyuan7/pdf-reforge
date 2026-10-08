@@ -1,0 +1,35 @@
+# Local secrets and configuration overrides
+.env
+.env.*
+!.env.example
+*.local.json
+
+# Every recognition / processing / publishing result stays local
+/output/
+/tmp/
+/logs/
+*.log
+*.pdf
+*.zip
+*.aux
+*.xdv
+*.fls
+*.fdb_latexmk
+*.synctex.gz
+
+# Source books are local inputs; keep only the current metadata example
+/input_pdfs/*
+!/input_pdfs/zorich-analysis-volume-1.book.yaml
+
+# Local runtimes and dependencies
+/.venv/
+/.tools/
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+*.egg-info/
+/build/
+/dist/
+.DS_Store

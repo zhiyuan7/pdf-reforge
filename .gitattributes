@@ -1,0 +1,4 @@
+# Preserve upstream templates and license files without whitespace rewrites.
+book_templates/elegantbook.cls -whitespace
+models/font_candidates/LxgwWenkaiGB/OFL.txt -whitespace
+*.ttf binary
