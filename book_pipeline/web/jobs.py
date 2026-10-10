@@ -222,7 +222,7 @@ class JobStore:
             report = read(content / 'section_results.json')
             if 'sections' not in report:
                 return
-            index = load_book(job['pdf'], job['mineru'])
+            index = load_book(job['pdf'], job['mineru'], job.get('formula_corrections'))
             book = build_book(index, read(content / 'split_source.json'), report, content)
             cache = self.directory / identifier / 'blocks.json'
             before = {(b['id'], b['kind'], b.get('pattern')) for b in read(cache)} if cache.is_file() else set()
@@ -265,7 +265,7 @@ class JobStore:
             previous = Path(job['content'])
             if not (previous / 'section_results.json').is_file():
                 raise KeyError(block_id)
-            index = load_book(job['pdf'], job['mineru'])
+            index = load_book(job['pdf'], job['mineru'], job.get('formula_corrections'))
             plan, report = read(previous / 'split_source.json'), read(previous / 'section_results.json')
             book = build_book(index, plan, report, previous)
             target = next((t for t in book['targets'] if t['id'] == block_id and
@@ -310,7 +310,7 @@ class JobStore:
             previous = Path(job.get('content') or '')
             if not (previous / 'section_results.json').is_file():
                 raise KeyError(kind)
-            index = load_book(job['pdf'], job['mineru'])
+            index = load_book(job['pdf'], job['mineru'], job.get('formula_corrections'))
             plan, report = read(previous / 'split_source.json'), read(previous / 'section_results.json')
             book = build_book(index, plan, report, previous)
             matches = [t for t in book['targets'] if t.get('origin') == 'deepseek_section_module' and
@@ -435,7 +435,13 @@ class JobStore:
                     if returncode:
                         raise RuntimeError('MinerU 识别失败，运行记录保存在本书稿的 mineru.log 中。')
         index = load_book(pdf, mineru)
-        self.stage(identifier, 'mineru', 'complete', '识别完成', job['source_pages'], job['source_pages'],
+        from book_pipeline.ingestion.formula_bands import correct_formula_bands, apply_formula_corrections
+        formula_directory = self.directory / identifier / 'formula_corrections'
+        correction = correct_formula_bands(index, self.config, formula_directory, self.progress(identifier, 'mineru'))
+        index = apply_formula_corrections(index, correction)
+        self.update(identifier, formula_corrections=str(formula_directory / 'formula_corrections.json'),
+                    formula_correction_statistics=dict(regions=len(correction['records']), usage=correction['usage']))
+        self.stage(identifier, 'mineru', 'complete', '识别与公式校正完成', job['source_pages'], job['source_pages'],
                    unit='页', completed_pages=job['source_pages'], source_total=job['source_pages'], window=None)
         headings, content = Path(job['headings']), Path(job['content'])
         self.stage(identifier, 'headings', detail='读取目录并匹配标题')
@@ -467,7 +473,7 @@ class JobStore:
         root = self.directory / identifier
         output = root / ('content-' + uuid.uuid4().hex[:8])
         self.stage(identifier, 'content', detail='识别习题章节与特殊块')
-        index = load_book(job['pdf'], job['mineru'])
+        index = load_book(job['pdf'], job['mineru'], job.get('formula_corrections'))
         config = {**self.config, 'shared_cache_dirs': [str(previous / 'cache'), *self.config.get('shared_cache_dirs', [])],
                   'keyword_candidates': validate_candidates(job.get('keyword_candidates', self.config.get('keyword_candidates')),
                                                             self.config.get('numbered_object_labels'))}
@@ -503,7 +509,7 @@ class JobStore:
         self._ensure_block_policy(identifier, force=True)
         self.update(identifier, preview_status='rendering')
         job = self.get(identifier)
-        index = load_book(job['pdf'], job['mineru'])
+        index = load_book(job['pdf'], job['mineru'], job.get('formula_corrections'))
         revision = (job.get('preview_revision') or 0) + 1
         output = self.directory / identifier / f'block-preview-{revision:04d}'
         result = render_block_preview(index, job['content'], job['metadata'],
@@ -526,7 +532,7 @@ class JobStore:
         self._ensure_block_policy(identifier, force=True)
         self.update(identifier, status='rendering')
         job = self.get(identifier)
-        index = load_book(job['pdf'], job['mineru'])
+        index = load_book(job['pdf'], job['mineru'], job.get('formula_corrections'))
         content, mapping = Path(job['content']), Path(job['references'])
         self.stage(identifier, 'references', detail='匹配编号引用')
         if not (mapping / 'mapping_results.json').is_file():
@@ -536,6 +542,9 @@ class JobStore:
         self.stage(identifier, 'render', detail='生成并编译书稿')
         revision = job['revision'] + 1
         output = self.directory / identifier / f'render-{revision:04d}'
+        while output.exists():
+            revision += 1
+            output = self.directory / identifier / f'render-{revision:04d}'
         result = render_saved_book(index, content, mapping, job['metadata'],
                                   {**self.config, 'block_colors': job['colors'], 'typography': job.get('typography')}, output,
                                   progress=self.progress(identifier, 'render'))

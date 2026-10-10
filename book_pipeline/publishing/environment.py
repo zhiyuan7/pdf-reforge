@@ -18,7 +18,7 @@ def doctor(config, require_key=True):
     if require_key and not os.environ.get(config["api_key_env"]):
         raise APIFailure("Missing environment variable " + config["api_key_env"])
     kpse = str(Path(tools["xelatex"]).parent / "kpsewhich")
-    for name in ("ctex.sty", "newtxmath.sty", "txsyc.tfm", "txsyc.pfb", "tcolorbox.sty", "biblatex.sty", "needspace.sty", "adjustbox.sty", "apptools.sty", "adforn.sty", "fixtounicode.sty", "mathtools.sty", "arydshln.sty", "FandolFang-Regular.otf"):
+    for name in ("ctex.sty", "newtxmath.sty", "txsyc.tfm", "txsyc.pfb", "tcolorbox.sty", "biblatex.sty", "needspace.sty", "adjustbox.sty", "apptools.sty", "adforn.sty", "fixtounicode.sty", "mathtools.sty", "arydshln.sty", "zref-abspage.sty", "FandolFang-Regular.otf"):
         command = subprocess.run([kpse, name], capture_output=True, text=True)
         if command.returncode or not command.stdout.strip():
             raise ValueError("Missing TeX package: " + name + "; run install_book_tex.py")

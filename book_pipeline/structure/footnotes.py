@@ -4,7 +4,8 @@ from copy import deepcopy
 import re
 import unicodedata
 
-METHOD = 'page_footnotes_same_page_unique_v1'
+METHOD = 'page_footnotes_same_page_unique_v2'
+FORMULA_DEDUP_METHOD = 'page_footnote_overlapping_formula_copy_v1'
 MARGINALS = {'header', 'footer', 'page_number'}
 CIRCLED = '①②③④⑤⑥⑦⑧⑨⑩⑪⑫⑬⑭⑮⑯⑰⑱⑲⑳➀➁➂➃➄➅➆➇➈➉❶❷❸❹❺❻❼❽❾❿'
 SUPERSCRIPTS = '⁰¹²³⁴⁵⁶⁷⁸⁹'
@@ -58,9 +59,91 @@ def marker_occurrences(text, marker, kind):
         yield match.start(), match.end()
 
 
+def formula_tokens(text):
+    """Compare OCR spellings only; the retained formula is never rewritten."""
+    text = text.replace('π', r'\pi').replace('′', "'").replace('’', "'")
+    text = re.sub(r'\\(?:left|right)(?![A-Za-z])', '', text)
+    text = re.sub(r'\^\s*\{\s*((?:\\prime\s*)+)\}',
+                  lambda m: "'" * m[1].count(r'\prime'), text)
+    text = re.sub(r'\^\s*\\prime(?![A-Za-z])', "'", text)
+    text = re.sub(r'\\(?:pmb|mathbf|boldsymbol)\s*\{([^{}]*)\}', r'\1', text)
+    text = re.sub(r'\\(?:varepsilon|epsilon)(?![A-Za-z])', lambda m: r'\epsilon', text)
+    text = re.sub(r'\\(?:dots|cdots|ldots)(?![A-Za-z])', lambda m: r'\dots', text)
+    previous = None
+    while previous != text:
+        previous = text
+        text = re.sub(r'([_^])\s*\{\s*([^{}\s]|\\[A-Za-z]+)\s*\}', r'\1\2', text)
+    # Tokenize control words before discarding whitespace: \alpha b and
+    # \alphab must remain distinct. Sentence punctuation can attach to a copy.
+    return tuple(re.findall(r'\\[A-Za-z]+|\\.|[^\s]', text.rstrip().rstrip(',.;，。；')))
+
+
+def formula_copy_overlap(copy, retained):
+    """Require the copied glyph region to lie inside the retained OCR region."""
+    if not copy or not retained or len(copy) != 4 or len(retained) != 4:
+        return False
+    area = (copy[2]-copy[0]) * (copy[3]-copy[1])
+    if copy[2] <= copy[0] or copy[3] <= copy[1]:
+        return False
+    width = max(0, min(copy[2], retained[2])-max(copy[0], retained[0]))
+    height = max(0, min(copy[3], retained[3])-max(copy[1], retained[1]))
+    return width * height >= .8 * area
+
+
+def duplicate_footnote_formulas(index, plan):
+    """Drop extra OCR blocks covered by formulas in a complete, labeled note."""
+    notes = [b for b in plan['blocks'] if b['source_type'] == 'page_footnote'
+             and not b['heading'] and b['page'] not in plan['excluded_pages']]
+    retained_by_page = defaultdict(list)
+    for block in notes:
+        if not extract_marker(block['text']):
+            continue
+        formulas = []
+        for n, part in enumerate(block['parts']):
+            if part['kind'] not in {'math', 'display_math'}:
+                continue
+            atom = index.atoms[index.ids[part['atom']]]
+            following = block['parts'][n+1] if n+1 < len(block['parts']) else None
+            punctuation = re.match(r'\s*([,.;()，。；（）]*)', following['text'])[1] if following and following['kind'] == 'text' else ''
+            formulas.append((part, atom.get('bbox'), formula_tokens(part['text']+punctuation)))
+        if formulas:
+            retained_by_page[block['page']].append((block, formulas))
+    deletions = []
+    for block in notes:
+        # Complete footnotes, including repeated mathematical arguments inside
+        # their text, remain intact. Only separate unlabelled OCR copies qualify.
+        if extract_marker(block['text']) or any(p['kind'] not in {'text', 'math', 'display_math'} for p in block['parts']):
+            continue
+        parts = [p for p in block['parts'] if p['text'].strip()]
+        if not parts:
+            continue
+        for retained, formulas in retained_by_page[block['page']]:
+            matches = []
+            for part in parts:
+                atom = index.atoms[index.ids[part['atom']]]
+                tokens = formula_tokens(part['text'])
+                match = next((p for p, bbox, value in formulas if tokens
+                    and formula_copy_overlap(atom.get('bbox'), bbox)
+                    and any(tokens == value[n:n+len(tokens)] for n in range(len(value)-len(tokens)+1))), None)
+                if match is None:
+                    break
+                matches.append(dict(source_atom=part['atom'], retained_atom=match['atom'],
+                                    text=part['text'], retained_formula=match['text']))
+            if len(matches) == len(parts):
+                deletions.append(dict(b=block['b'], lo=block['lo'], hi=block['hi'],
+                    start=block['start'], end=block['end'], page=block['page'],
+                    reason='footnote_duplicate_formula', method=FORMULA_DEDUP_METHOD,
+                    why='Extra OCR formula block overlaps the same formula inside a labeled page footnote',
+                    removed=block['text'], retained_block=retained['b'], matches=matches, outside_scope=False))
+                break
+    return deletions
+
+
 def classify_footnotes(index, plan):
     """Classify before any model input; multiple note/body candidates never pair."""
     plan = deepcopy(plan)
+    duplicates = duplicate_footnote_formulas(index, plan)
+    duplicate_blocks = {d['b'] for d in duplicates}
     by_page = defaultdict(list)
     owners = {bid: s['id'] for s in plan['sections'] for bid in s['blocks']}
     notes = []
@@ -70,6 +153,8 @@ def classify_footnotes(index, plan):
         if block['page'] in plan['excluded_pages']:
             continue
         if is_note:
+            if block['b'] in duplicate_blocks:
+                continue
             marker = extract_marker(block['text'])
             notes.append(dict(id='footnote-'+block['b'], block=block['b'], page=block['page'],
                               section=owners.get(block['b']), lo=block['lo'], hi=block['hi'],
@@ -101,8 +186,10 @@ def classify_footnotes(index, plan):
         elif note['candidates']:
             note['reason'] = 'ambiguous_reference'
     result = dict(method=METHOD, match_policy='same_original_page_unique_marker', items=notes,
+                  duplicate_formulas=duplicates,
                   statistics=dict(blocks=len(notes), matched=sum(n['status']=='matched' for n in notes),
                                   unmatched=sum(n['status']=='unmatched' for n in notes),
+                                  duplicate_formula_blocks=len(duplicates),
                                   reasons=dict(Counter(n['reason'] for n in notes))))
     plan['footnotes'] = result
     return plan

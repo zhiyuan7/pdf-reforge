@@ -9,9 +9,10 @@ from book_pipeline.structure.section_review import materialize, render_parts
 from book_pipeline.structure.keyword_matching import MINIMUM_OCCURRENCES, validate_candidates
 from book_pipeline.structure.subheading_patterns import canonical_pattern, expand_letter_patterns, first_prefix_pattern, pattern_depth
 from book_pipeline.structure.page_content import recover_continuous_subheadings, saved_subheading_candidates
+from book_pipeline.structure.footnotes import classify_footnotes, METHOD as FOOTNOTE_METHOD
 
 REMOVED_BLOCKS_FILE = 'removed_special_blocks.json'
-SPECIAL_BLOCK_POLICY = 'saved_keywords_numbering_continuity_footnotes_v5'
+SPECIAL_BLOCK_POLICY = 'saved_keywords_numbering_continuity_footnotes_v6'
 
 
 def special_block_key(section, module):
@@ -146,6 +147,10 @@ def source_for_quote(pieces,lo,hi):
 def build_book(index,plan,report,directory):
     """Registry includes every heading and every retained figure/table body."""
     directory=Path(directory)
+    if plan.get('footnotes', {}).get('method') != FOOTNOTE_METHOD:
+        plan = classify_footnotes(index, plan)
+    duplicates = plan['footnotes'].get('duplicate_formulas', [])
+    raw_blocks = {b['b']: b for b in plan['blocks']}
     rules = removed_special_rules(directory)
     removed = {item['key'] for item in rules.get('blocks', [])}
     disabled_types = {(item['kind'], pattern) for item in rules.get('types', [])
@@ -166,7 +171,16 @@ def build_book(index,plan,report,directory):
     atlas=[];units={};registry=[]
     for row in rows:
         sid=row['section']['id'];h=row['section']['heading'];scope=context(h)
-        processed=read(directory/'sections'/sid/'processed.json');units[sid]=processed
+        processed=read(directory/'sections'/sid/'processed.json')
+        cuts = [d for d in duplicates if d['b'] in row['section']['blocks']]
+        recorded = {(d['lo'], d['hi'], d.get('reason')) for d in row['resolved']['d']}
+        cuts = [d for d in cuts if (d['lo'], d['hi'], d['reason']) not in recorded]
+        if cuts:
+            # Upgrade saved units locally too, without rerunning body judgments
+            # or changing the original OCR and saved decisions during rendering.
+            edits = {**row['resolved'], 'd': [*row['resolved']['d'], *cuts]}
+            processed = materialize(index, row['section'], [raw_blocks[b] for b in row['section']['blocks']], edits)
+        units[sid]=processed
         for unit in processed['units']:
             text,pieces=source_pieces(index,unit,row['resolved']['c'])
             atlas.append({'b':unit['blocks'][0],'source_blocks':unit['blocks'],'section':sid,'page':unit['page'],
@@ -320,6 +334,7 @@ def build_book(index,plan,report,directory):
         block['declarations']=[list(x) for x in sorted(set(tuple(d) for d in block['declarations']))]
     return {'source':report['source'],'heading_sha256':plan['heading_sha256'],
             'footnotes':plan.get('footnotes', {}).get('items', []),
+            'footnote_duplicate_formulas':duplicates,
             'processed_sha256':fingerprint(dict(resolved=[r['resolved'] for r in rows], removed=sorted(removed),
                                                footnotes=plan.get('footnotes', {}),
                                                disabled_types=sorted(disabled_types), rare_keywords=sorted(rare_keywords),

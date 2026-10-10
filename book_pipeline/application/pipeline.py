@@ -13,8 +13,12 @@ from book_pipeline.structure.rule_mapping import run_rule_mapping
 from book_pipeline.publishing.processed_book import render_saved_book
 
 
-def load_book(pdf, mineru_directory):
-    return SourceIndex(load_source(pdf, mineru_directory))
+def load_book(pdf, mineru_directory, formula_corrections=None):
+    index = SourceIndex(load_source(pdf, mineru_directory))
+    if formula_corrections:
+        from book_pipeline.ingestion.formula_bands import apply_formula_corrections
+        index = apply_formula_corrections(index, read(formula_corrections))
+    return index
 
 
 def match_headings(index, metadata, config, output, progress):
@@ -66,11 +70,16 @@ def run_workflow(pdf, mineru_directory, metadata_path, config, output, seed, pro
     if output == Path(mineru_directory).resolve() or output.is_relative_to(Path(mineru_directory).resolve()):
         raise ValueError('输出目录不能覆盖 MinerU 原始识别目录')
     headings, content, mapping = (output / name for name in ('headings', 'content', 'references'))
+    from book_pipeline.ingestion.formula_bands import correct_formula_bands, apply_formula_corrections
+    formula_repairs = correct_formula_bands(index, config, output / 'formula_corrections', progress)
+    index = apply_formula_corrections(index, formula_repairs)
     first = match_headings(index, metadata, config, headings, progress)
     second = process_content(index, headings, config, content, seed, progress)
     if second['status'] != 'complete':
         return {'status': second['status'], 'headings': first, 'content': second}
     mapped = run_rule_mapping(index, content, mapping, heading_directory=headings, progress=progress)
     rendered = render_saved_book(index, content, mapping, metadata, config, output / 'pdf', progress=progress)
-    return {'status': rendered['status'], 'headings': first, 'content': second,
+    return {'status': rendered['status'], 'formula_corrections': dict(
+                regions=len(formula_repairs['records']), usage=formula_repairs['usage']),
+            'headings': first, 'content': second,
             'references': mapped['statistics'], 'render': rendered}

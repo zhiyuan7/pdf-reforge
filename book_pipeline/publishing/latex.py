@@ -16,6 +16,7 @@ from book_pipeline.structure.paragraphs import supported_joins
 from book_pipeline.structure.heading_layout import HeadingLayout
 from book_pipeline.publishing.colors import COLOR_KINDS, color_definitions, selected_color, validate_colors
 from book_pipeline.publishing.figure_recovery import recover_fragmented_figures
+from book_pipeline.publishing.image_rows import recover_horizontal_images
 from book_pipeline.publishing.typography import validate_typography, subheading_size, trim_title_punctuation
 
 ESCAPES = {"\\": r"\textbackslash{}", "&": r"\&", "%": r"\%", "$": r"\$", "#": r"\#", "_": r"\_", "{": r"\{", "}": r"\}", "~": r"\textasciitilde{}", "^": r"\textasciicircum{}"}
@@ -44,6 +45,9 @@ def unicode_symbol(char, math=False):
     # Circled footnote markers occur inside superscripts as well as ordinary text.
     # NewTX's OT1 math text font cannot represent these Unicode characters.
     code = ord(char)
+    if char in '◀▶':
+        symbol = r'\blacktriangleleft' if char == '◀' else r'\blacktriangleright'
+        return symbol if math else r'\ensuremath{' + symbol + '}'
     if char in '₀₁₂₃₄₅₆₇₈₉':
         subscript='_{'+str('₀₁₂₃₄₅₆₇₈₉'.index(char))+'}'
         return subscript if math else r'\ensuremath{{}'+subscript+'}'
@@ -166,6 +170,20 @@ def table_tex(html, in_box=False):
     return "\n\\par\\noindent\\makebox[\\linewidth][c]{%\n\\begin{adjustbox}{max width=\\linewidth}\n\\begin{tabular}{" + "c" * columns + "}\n\\toprule\n" + content + "\n\\bottomrule\n\\end{tabular}\n\\end{adjustbox}}\\par\n"
 
 
+def footnote_marker_span(content, start, end):
+    """Include an OCR marker's superscript wrappers without touching its base."""
+    while True:
+        prefix = re.search(r'(?:\^|\\(?:text|mbox|mathrm|textsuperscript))\s*\{\s*$', content[:start])
+        suffix = re.match(r'\s*\}', content[end:])
+        if prefix and suffix:
+            start, end = prefix.start(), end + suffix.end()
+        else:
+            prefix = re.search(r'\^\s*$', content[:start])
+            if prefix:
+                start = prefix.start()
+            return start, end
+
+
 class Renderer:
     def __init__(self, index, decisions, registry, references, directory, config=None, heading_layout=None):
         self.index, self.decisions, self.registry = index, decisions, registry
@@ -197,6 +215,12 @@ class Renderer:
         self.source_anchors = {}
         edited_atoms = {atom for atom, rows in self.corrections.items() if rows} | {atom for atom, rows in self.refs.items() if rows}
         self.recovered_figures = recover_fragmented_figures(index, registry, self.directory, edited_atoms)
+        self.image_rows = recover_horizontal_images(index, registry, self.directory, edited_atoms)
+        self.image_row_members = {member for row in self.image_rows.values() for member in row['members']}
+        self.image_row_groups = {group for row in self.image_rows.values() for group in row['groups']}
+        self.image_row_targets = {target for row in self.image_rows.values() for target in row['targets']}
+        for atom, row in self.image_rows.items():
+            self.source_order_layout.append({'atom': atom, 'method': 'horizontal_source_image_row', **row})
         self.figure_labels = {label for figure in self.recovered_figures.values() for label in figure['labels']}
         for atom, figure in self.recovered_figures.items():
             self.source_order_layout.append({'atom': atom, 'method': 'fragmented_diagram_preserved_from_source_page', **figure})
@@ -205,6 +229,30 @@ class Renderer:
         self.page_footnotes = decisions.get('page_footnotes', [])
         self.rendered_footnotes = []
         self.footnote_bodies = {}
+        self.footnote_markers = defaultdict(list)
+        for note in self.page_footnotes:
+            if note['status'] != 'matched':
+                continue
+            reference = note['reference']
+            self.add_footnote_marker(reference['edited_lo'], reference['edited_hi'], note, True)
+            self.add_footnote_marker(note['marker_lo'], note['marker_hi'], note, False)
+
+    def add_footnote_marker(self, lo, hi, note, reference):
+        parts = list(self.index.fragments(lo, hi))
+        if len(parts) != 1 or parts[0][0]['kind'] not in {'text', 'math'}:
+            raise ValueError('Footnote marker must occupy one text or inline math atom: ' + note['id'])
+        atom, a, z = parts[0]
+        a, z = footnote_marker_span(atom['content'], a, z)
+        if any(a < c['end_offset'] and z > c['start_offset'] for c in self.corrections[atom['id']]):
+            raise ValueError('Footnote marker overlaps an OCR correction: ' + note['id'])
+        if any(a < m['end'] and z > m['start'] for m in self.footnote_markers[atom['id']]):
+            raise ValueError('Overlapping matched footnote markers: ' + note['id'])
+        command = 'BookFootnoteReference' if reference else 'BookFootnoteLabel'
+        self.footnote_markers[atom['id']].append(dict(start=a, end=z, tex='\\' + command + '{' + note['id'] + '}'))
+        if reference:
+            self.anchors.append(note['reference_anchor'])
+            if atom['kind'] == 'text':
+                note['insert_after'] = self.index.prefix[self.index.ids[atom['id']]] + z
 
     def page_footnote_body(self, note):
         if note['id'] in self.footnote_bodies:
@@ -220,10 +268,15 @@ class Renderer:
         return body
 
     def page_footnote_tex(self, note):
-        """Retain original labels and native inline mathematics, exactly once."""
+        """Pair page-local matched labels; retain unmatched text and native math."""
         body = self.page_footnote_body(note)
         self.anchors.append(note['anchor'])
-        self.rendered_footnotes.append({k:note[k] for k in ('id','anchor','reference_anchor','status','page','reason')})
+        record = {k:note[k] for k in ('id','anchor','reference_anchor','status','page','reason')}
+        record.update(original_marker=note['marker']['text'] if note['marker'] else None)
+        if note['status'] == 'matched':
+            record.update(numbering='rendered_page_from_one', marker_style=note['marker']['style'],
+                          reference_order=note['reference']['edited_lo'])
+        self.rendered_footnotes.append(record)
         return '\\BookPageFootnote{' + note['anchor'] + '}{' + body + '}\n'
 
     def asset(self, atom):
@@ -238,12 +291,23 @@ class Renderer:
 
     def text_fragment(self, atom, lo, hi):
         changes = []
+        markers = self.footnote_markers[atom['id']]
+        for marker in markers:
+            start, end = marker['start'], marker['end']
+            if start < hi and end > lo:
+                if not lo <= start < end <= hi:
+                    raise ValueError('Rendering boundary splits a matched footnote marker: ' + atom['id'])
+                changes.append((start, end, marker['tex']))
         for c in self.corrections[atom["id"]]:
             if lo <= c["start_offset"] and c["end_offset"] <= hi:
                 changes.append((c["start_offset"], c["end_offset"], escape(c["replacement"])))
         for r in self.refs[atom["id"]]:
             start, end = max(lo, r['start_offset']), min(hi, r['end_offset'])
-            if start < end:
+            spans = [(start, end)] if start < end else []
+            for marker in markers:
+                spans = [(x, y) for a, z in spans for x, y in
+                         ((a, min(z, marker['start'])), (max(a, marker['end']), z)) if x < y]
+            for start, end in spans:
                 text = r['text'] if (start,end)==(r['start_offset'],r['end_offset']) else atom['content'][start:end]
                 changes.append((start, end, "\\BookLink{" + r["target"] + "}{" + escape(text) + "}"))
                 self.link_targets.append(r["target"])
@@ -266,6 +330,8 @@ class Renderer:
         return self.source_marker(atom) + value
 
     def source_marker(self, atom):
+        if atom['id'] in self.image_row_members:
+            return ''  # All row destinations are emitted together inside the shared image.
         if atom['id'] in self.figure_labels:
             return ''  # These destinations are emitted inside the complete source figure.
         if atom["id"] not in self.source_anchors:
@@ -275,13 +341,33 @@ class Renderer:
         return ""
 
     def content_fragment(self, atom, lo, hi, in_box):
+        if atom['id'] in self.image_rows:
+            row = self.image_rows[atom['id']]
+            markers = ''
+            for member in row['members']:
+                name = 'source-' + member
+                self.source_anchors[member] = name
+                markers += '\\hypertarget{' + name + '}{}'
+            for target in row['targets']:
+                markers += self.anchor(target)
+            body = [a['bbox'] for a in self.index.atoms if a['page'] == atom['page']
+                    and a['kind'] == 'text' and a['block_type'] == 'text' and a.get('bbox')
+                    and not a.get('formula_repair')]
+            column = max((b[2] for b in body), default=.88) - min((b[0] for b in body), default=.12)
+            width = min(1., (row['bbox'][2]-row['bbox'][0]) / max(.25, column))
+            carrier = {**atom, 'asset': row['asset']}
+            return '\n' + markers + '\\BookImage[' + f'{width:.3f}' + '\\linewidth]{' + self.asset(carrier) + '}\n'
+        if atom['id'] in self.image_row_members:
+            return ''
         if atom['id'] in self.figure_labels:
             return ''
         if atom["kind"] == "text":
             return self.text_fragment(atom, lo, hi)
         content = atom["content"]
-        for c in sorted(self.corrections[atom["id"]], key=lambda c: -c["start_offset"]):
-            content = content[:c["start_offset"]] + c["replacement"] + content[c["end_offset"]:]
+        changes = [(c['start_offset'], c['end_offset'], c['replacement']) for c in self.corrections[atom['id']]]
+        changes += [(m['start'], m['end'], r'\mbox{' + m['tex'] + '}') for m in self.footnote_markers[atom['id']]]
+        for start, end, replacement in sorted(changes, reverse=True):
+            content = content[:start] + replacement + content[end:]
         if atom['kind'] in {'math','display_math'}:
             compatible,evidence=math_compatibility(content)
             if evidence:
@@ -459,7 +545,11 @@ class Renderer:
             extra = '{BookColor' + color[1:] + '}' if color and item['kind'] != 'example' else ''
             notes = boxed_notes.get(item['anchor'], [])
             reserve = '\n\\BookFootnoteBoxReserve{' + '\\par\n'.join(self.page_footnote_body(n) for n in notes) + '}\n' if notes else ''
-            options = '[lines before break=100,shrink break goal=\\BookFootnoteReserve]' if notes else ''
+            # The default after-skip permits TeX to ship the box's page before
+            # insert_notes emits its page footnotes. Keep that gap unbreakable;
+            # the reserved height can then move the box and notes together.
+            options = (r'[lines before break=100,shrink break goal=\BookFootnoteReserve,'
+                       r'after={\par\nobreak\vskip9pt\nobreak}]') if notes else ''
             return reserve + '\n\\begin{' + environment(item) + '}' + options + '{' + title + '}' + extra + '\n'
         join_pairs = self.join_pairs
         group_limits = {}
@@ -472,6 +562,8 @@ class Renderer:
         floating_groups={};floating_open=None;pending_reopen=False
         caption_limits = {}
         for group, indices in group_atoms.items():
+            if group in self.image_row_groups:
+                continue
             image_bodies = [i for i in indices if self.index.atoms[i]["kind"] == "image"]
             image_captions = [i for i in indices if self.index.atoms[i]["role"] in ("image_caption", "chart_caption", "image_footnote", "chart_footnote")]
             group_lo, group_hi = group_limits[group]
@@ -506,6 +598,19 @@ class Renderer:
             caption_lo, caption_hi = self.index.prefix[min(captions)], self.index.prefix[max(captions) + 1]
             table_captions[self.index.atoms[bodies[0]]["id"]] = (caption_lo, caption_hi)
             skipped.append((caption_lo, caption_hi, "caption_moved_above_table"))
+        # A complete image row is one indivisible asset. Move it outside a
+        # breakable example/theorem box just like an ordinary figure, so a tall
+        # pair of images cannot extend past the bottom of the physical page.
+        for carrier, row in self.image_rows.items():
+            start = self.index.ids[carrier]
+            stop = max(self.index.ids[member] for member in row['members']) + 1
+            a, b = self.index.prefix[start], self.index.prefix[stop]
+            members = set(row['members'])
+            safe = (all(atom['id'] in members for atom in self.index.atoms[start:stop])
+                    and not any(a < p < b for p in (*starts, *ends))
+                    and not any(x < b and z > a for x, z, _ in skipped))
+            if self.config.get('float_assets') and safe:
+                floating_groups[self.index.atoms[start]['group']] = (a, b, 'figure')
         # MinerU occasionally treats an exercise/question preceding a table as
         # its caption. A confirmed semantic object owns that paragraph's style.
         semantic_caption_groups = {
@@ -520,8 +625,6 @@ class Renderer:
             floating_open=None;pending_reopen=bool(stack);last_atom=None
         def insert_notes(position):
             for note in note_insertions.pop(position, []):
-                if note['status'] == 'matched':
-                    current.append(self.anchor(note['reference_anchor']))
                 pending_notes.append(note)
             # tcolorbox uses minipage footnotes. Emit the page insertion outside
             # captured boxes so it cannot be swallowed or rendered inside them.
@@ -593,6 +696,8 @@ class Renderer:
                     if lo in heading_space and not self.heading_layout.standalone(o):
                         current.append("\n\\Needspace{" + str(heading_space[lo]) + "\\baselineskip}\n")
                     toc_title = re.sub(r'\{\\BookUnicodeFont\\char"24(?:6[0-9A-F]|7[0-3])\}', "", shown)
+                    toc_title = re.sub(r'\\BookFootnoteReference\{([^{}]+)\}',
+                                       lambda m: r'\textsuperscript{\BookFootnoteLabel{' + m[1] + '}}', toc_title)
                     toc_title = r'\texorpdfstring{'+toc_title+'}{'+bookmark_title(self.index,o['lo'],o['hi'])+'}'
                     current.append("\n\\BookHeading{" + str(level) + "}{" + shown + "}{" + o["anchor"] + "}[" + markers + "][{" + toc_title + "}]\n")
                 else:
@@ -623,6 +728,8 @@ class Renderer:
                                                 'lo':lo,'hi':floating_open[1],'surrounding_modules':[p['anchor'] for p in stack]})
                 last_atom=None
             for o in anchored[lo]:
+                if o['anchor'] in self.image_row_targets:
+                    continue
                 if (o["kind"] in ("equation", "formula", "figure", "table") or o.get("anchor_only")) and o["anchor"] not in moved_anchors:
                     current.append(self.anchor(o["anchor"]))
             actions = [action for a, b, action in skipped if a <= lo and hi <= b]
@@ -672,7 +779,8 @@ class Renderer:
                     value+='\n\\BookCaption{'+caption+'}\n'
                 if any(a<=lo and hi<=b for a,b in self.bold_spans):
                     value='{\\bfseries '+value+'}'
-                is_caption = atom["role"] in CAPTION_ROLES and atom["group"] not in semantic_caption_groups
+                is_caption = (atom["role"] in CAPTION_ROLES and atom["group"] not in semantic_caption_groups
+                              and atom['id'] not in self.image_row_members)
                 if caption_open is not None and (not is_caption or caption_open != atom["group"]):
                     current.append("\\par\\endgroup\n"); caption_open = None
                 if is_caption:
@@ -749,8 +857,8 @@ def write_project(index, decisions, registry, references, metadata, config, dire
     typography = renderer.typography
     body = typography['body_size']
     preamble = "\n".join([
-        # BookFootnote uses original labels and explicit destinations. There
-        # is no automatic footnotemark for hyperref to pair with footnotetext.
+        # Matched note labels are paired explicitly with physical page records.
+        # There is no automatic footnotemark to pair with footnotetext.
         r"\PassOptionsToPackage{hyperfootnotes=false}{hyperref}",
         r"\documentclass[lang=cn,chinesefont=nofont,10pt,twoside,openany,math=newtx]{elegantbook}",
         "\\setCJKmainfont{" + escape(config["main_font"]) + "}",
@@ -772,7 +880,11 @@ def write_project(index, decisions, registry, references, metadata, config, dire
         r"\pdfstringdefDisableCommands{\def\hypertarget#1#2{#2}\def\BookHeadingGap{ }}",
         "\\renewcommand{\\BookFooter}{" + escape(title + ("　" + author if author else "")) + "}",
         "\\hypersetup{pdftitle={" + escape(title) + "},pdfauthor={" + escape(author) + "}}",
-        r"\begin{document}", r"\pagestyle{empty}" if sample_mode else r"\frontmatter",
+        r"\begin{document}",
+        '\n'.join(r'\BookDeclareFootnote{' + note['id'] + '}{' + note['marker']['style'] + '}'
+                  for note in sorted((n for n in renderer.page_footnotes if n['status']=='matched'),
+                                     key=lambda n: n['reference']['edited_lo'])),
+        r"\pagestyle{empty}" if sample_mode else r"\frontmatter",
         r"\tableofcontents" if not sample_mode and renderer.toc_position is None else "",
         "\n".join(inputs), r"\end{document}", ""])
     (directory / "main.tex").write_text(preamble, encoding="utf-8")

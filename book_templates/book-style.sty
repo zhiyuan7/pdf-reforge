@@ -1,6 +1,7 @@
 \NeedsTeXFormat{LaTeX2e}
 \ProvidesPackage{book-style}[2026/10/02 Source-preserving LADR style]
 \RequirePackage{needspace,longtable,adjustbox,mathtools,arydshln}
+\RequirePackage{zref-abspage}
 \definecolor{structurecolor}{HTML}{3C71B7}
 \definecolor{main}{HTML}{00A652}
 \definecolor{second}{HTML}{FF8618}
@@ -73,7 +74,7 @@
  \edef\BookHeadingAlign{\csname BookHeadingAlign@#1\endcsname}%
  \def\BookCentered{center}%
  \ifnum\csname BookHeadingSingle@#1\endcsname=1\relax
-  \clearpage\thispagestyle{plain}\null\vfill\markboth{#2}{#2}%
+  \clearpage\thispagestyle{plain}\null\vfill\markboth{\BookTOCTitle}{\BookTOCTitle}%
   {\ifx\BookHeadingAlign\BookCentered\centering\fi
    \color{structurecolor}\sffamily\heiti\bfseries\BookHeadingSize{#1}%
    \noindent\BookAnchor{#3}\addcontentsline{toc}{\BookTOCType}{\BookTOCTitle}#4\BookStandaloneTitle{#2}\par}%
@@ -82,8 +83,8 @@
   \par\ifnum#1<3\relax\Needspace{7\baselineskip}\vspace{16pt}%
   \else\ifnum#1<5\relax\Needspace{5\baselineskip}\vspace{10pt}%
   \else\Needspace{3\baselineskip}\vspace{5pt}\fi\fi
-  \ifnum#1<3\relax\thispagestyle{plain}\markboth{#2}{#2}%
-  \else\ifnum#1=3\relax\markright{#2}\fi\fi
+  \ifnum#1<3\relax\thispagestyle{plain}\markboth{\BookTOCTitle}{\BookTOCTitle}%
+  \else\ifnum#1=3\relax\markright{\BookTOCTitle}\fi\fi
   \BookAnchor{#3}\addcontentsline{toc}{\BookTOCType}{\BookTOCTitle}%
   {\ifx\BookHeadingAlign\BookCentered\centering\fi
    \color{structurecolor}\sffamily\heiti\bfseries\BookHeadingSize{#1}%
@@ -128,6 +129,39 @@
 \NewDocumentEnvironment{BookFootnote}{m+b}{\begingroup
  \renewcommand{\thefootnote}{}\footnotetext{\noindent #1#2}\endgroup}{}
 \providecommand{\BookFootnoteFont}{\normalfont\footnotesize}
+% Read the previous pass's shipped physical pages, rather than source pages or
+% counters evaluated while tcolorbox is still collecting its contents.
+\zref@newprop{bookfootnotenumber}[0]{\BookFootnoteCurrentNumber}
+\newcommand{\BookDeclareFootnote}[2]{\begingroup
+ \edef\BookFootnotePage{\zref@extractdefault{ref-#1}{abspage}{0}}%
+ \@tempcnta=1\relax
+ \ifnum\BookFootnotePage>0\relax
+  \@ifundefined{BookFootnoteCount@\BookFootnotePage}{%
+   \expandafter\gdef\csname BookFootnoteCount@\BookFootnotePage\endcsname{0}}{}%
+  \@tempcnta=\csname BookFootnoteCount@\BookFootnotePage\endcsname\relax
+  \advance\@tempcnta by 1\relax
+  \expandafter\xdef\csname BookFootnoteCount@\BookFootnotePage\endcsname{\the\@tempcnta}%
+ \fi
+ \expandafter\xdef\csname BookFootnoteNumber@#1\endcsname{\the\@tempcnta}%
+ \expandafter\gdef\csname BookFootnoteStyle@#1\endcsname{#2}%
+ \endgroup}
+\DeclareRobustCommand{\BookFootnoteLabel}[1]{\begingroup\normalfont
+ \edef\BookFootnoteNumber{\csname BookFootnoteNumber@#1\endcsname}%
+ \edef\BookFootnoteStyle{\csname BookFootnoteStyle@#1\endcsname}%
+ \def\BookCircledStyle{circled}%
+ \ifx\BookFootnoteStyle\BookCircledStyle
+  \ifnum\BookFootnoteNumber<21\relax
+   {\BookUnicodeFont\char\numexpr"245F+\BookFootnoteNumber\relax}%
+  \else\textcircled{\BookFootnoteNumber}\fi
+ \else\BookFootnoteNumber\fi
+ \endgroup}
+\newcommand{\BookFootnoteReference}[1]{\leavevmode
+ \hypertarget{ref-#1}{}%
+ \begingroup
+ \edef\BookFootnoteCurrentNumber{\csname BookFootnoteNumber@#1\endcsname}%
+ \zref@labelbyprops{ref-#1}{abspage,bookfootnotenumber}%
+ \textsuperscript{\BookFootnoteLabel{#1}}%
+ \endgroup}
 \newbox\BookFootnoteMeasure
 \newdimen\BookFootnoteReserve
 \NewDocumentCommand{\BookFootnoteBoxReserve}{+m}{%

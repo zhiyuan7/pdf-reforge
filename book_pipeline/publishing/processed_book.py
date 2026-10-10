@@ -8,7 +8,8 @@ import shutil
 
 from book_pipeline.config import digest,fingerprint,read,save
 from book_pipeline.ingestion.source import SourceIndex
-from book_pipeline.structure.book_mapping import build_book
+from book_pipeline.structure.book_mapping import build_book, project_source
+from book_pipeline.structure.headings import source_heading_end
 from book_pipeline.publishing.latex import write_project
 from book_pipeline.publishing.compiler import compile_project
 from book_pipeline.publishing.environment import doctor
@@ -28,15 +29,23 @@ class EditedBook:
         for b in book['blocks']:by_section[b['section']].append(b)
         for section in book['sections']:
             h=section['heading'];lo,hi=original.span(h);start=self.offset
+            hi=source_heading_end(original,lo,hi)
             for atom,a,z in original.fragments(lo,hi):
                 self.append(atom,a,z,atom['content'][a:z],section['id'],None,None)
             self.heading_spans[section['id']]=(start,self.offset)
             for block in by_section[section['id']]:
                 char=0;parts=[]
+                # Old saved books may still own the title suffix in a body
+                # unit. Move it once, using the existing correction/source map.
+                cut=max((z for a,z in project_source(block['pieces'],lo,hi)),default=0)
                 for part in block['parts']:
                     atom=original.atoms[original.ids[part['source_atom']]]
-                    new=self.append(atom,part['start_offset'],part['end_offset'],part['text'],block['b'],block,char)
-                    if new:parts.append(dict(atom=new['id'],char_lo=char,char_hi=char+len(part['text'])))
+                    skip=min(len(part['text']),max(0,cut-char))
+                    if skip<len(part['text']) or (skip==0 and atom['kind']!='text'):
+                        a=part['start_offset']
+                        if skip:a=max(a,hi-original.prefix[original.ids[atom['id']]])
+                        new=self.append(atom,a,part['end_offset'],part['text'][skip:],block['b'],block,char+skip)
+                        if new:parts.append(dict(atom=new['id'],char_lo=char+skip,char_hi=char+len(part['text'])))
                     char+=len(part['text'])
                 assert char==len(block['text'])
                 self.block_parts[block['b']]=parts
@@ -46,7 +55,9 @@ class EditedBook:
         self.registry=[];self.bold=[];self.references=[];self.linked_hints=[];self.unlinked=[];self.notes=[]
         for t in book['targets']:
             if t['kind']=='heading':lo,hi=self.heading_spans[t['context']['heading']]
-            else:lo,hi=self.project(t['lo'],t['hi'])
+            else:
+                source_hi=source_heading_end(original,t['lo'],t['hi']) if t['kind']=='subheading' else t['hi']
+                lo,hi=self.project(t['lo'],source_hi)
             kind={'other':'remark'}.get(t['kind'],t['kind'])
             if t['kind']=='heading':
                 h=next(s['heading'] for s in book['sections'] if s['id']==t['context']['heading'])
@@ -61,6 +72,9 @@ class EditedBook:
                 first,last=self.index.ids[parts[0]['atom']],self.index.ids[parts[-1]['atom']]
                 item['caption_span']=[self.index.prefix[first],self.index.prefix[last+1]]
             if t['kind']=='heading':item.update(heading_level=h['heading_level'],toc_category=h['toc_category'],toc_id=h['toc_id'])
+            if t['kind'] in {'heading','subheading'}:
+                item['label']=self.index.text(lo,hi)
+                if t['kind']=='heading':item['name']=item['label']
             if t['kind'] not in {'heading','equation','figure','table','subheading'}:
                 title_end=t.get('declaration_hi',t['lo'])
                 if t['lo']<title_end<t['hi']:
@@ -109,6 +123,8 @@ class EditedBook:
                 atom = self.index.atoms[self.index.ids[self.index.address(z, True)['atom']]]
                 item['insert_after'] = z if atom['kind']=='text' else self.index.prefix[self.index.ids[atom['id']]+1]
                 item['reference'] = {**reference, 'edited_lo':a, 'edited_hi':z}
+                marker = note['marker']
+                item['marker_lo'], item['marker_hi'] = self.project(note['lo']+marker['start'], note['lo']+marker['end'])
             else:
                 item['insert_after'] = lo
             self.footnotes.append(item)
@@ -203,11 +219,13 @@ def render_saved_book(original,processing,mapping_directory,metadata,config,outp
     save(reports/'edited_source.json',edited.index.source)
     save(reports/'render_registry.json',edited.registry)
     save(reports/'footnotes.json',edited.footnotes)
+    save(reports/'footnote_formula_deletions.json',book.get('footnote_duplicate_formulas', []))
     save(reports/'render_references.json',references)
     save(reports/'unlinked_reference_hints.json',edited.unlinked)
     save(reports/'ignored_formula_modules.json',edited.ignored_formula_modules)
     coverage=write_project(edited.index,decisions,edited.registry,references,metadata['book'],native_config,project,heading_layout=settings)
     coverage['saved_module_notes']=edited.notes
+    coverage['footnote_formula_deletions']=book.get('footnote_duplicate_formulas', [])
     save(reports/'coverage.json',coverage)
     progress('生成 LaTeX',1,1)
     if (reports/'compilation.json').exists():
@@ -229,17 +247,27 @@ def render_saved_book(original,processing,mapping_directory,metadata,config,outp
             examples=sum(t['kind']=='example' for t in edited.registry),linked_reference_hints=len(edited.linked_hints),
             footnotes=len(edited.footnotes), matched_footnotes=sum(n['status']=='matched' for n in edited.footnotes),
             unmatched_footnotes=sum(n['status']=='unmatched' for n in edited.footnotes),
-            ambiguous_or_unmatched_hints=len(edited.unlinked),asset_float_groups=sum(r['method']=='deferred_asset_float' for r in coverage['source_order_layout'])),
+            duplicate_footnote_formula_blocks=len(book.get('footnote_duplicate_formulas', [])),
+            ambiguous_or_unmatched_hints=len(edited.unlinked),asset_float_groups=sum(r['method']=='deferred_asset_float' for r in coverage['source_order_layout']),
+            horizontal_image_rows=sum(r['method']=='horizontal_source_image_row' for r in coverage['source_order_layout']),
+            horizontal_images=sum(len(r['images']) for r in coverage['source_order_layout'] if r['method']=='horizontal_source_image_row')),
         heading_layout=settings,compilation=compilation,block_colors=config.get('block_colors',{}),
         typography=config.get('typography'))
     if compilation['success']:
         progress('编译完成',1,1)
         audit=audit_pdf(project/'main.pdf',coverage,edited.registry)
         save(reports/'pdf_audit.json',audit)
+        numbering = {n['id']:n for n in audit['footnotes']}
+        save(reports/'footnotes.json', [{**note, **{k:v for k,v in numbering[note['id']].items()
+             if k in {'rendered_page','reference_page','rendered_number','rendered_marker','same_page'}}}
+             for note in edited.footnotes])
+        save(reports/'footnote_numbering.json', dict(method='matched_footnotes_per_rendered_physical_page_v1',
+             pages=audit['footnote_numbering_pages'], items=audit['footnotes']))
         qa=LocalPDFReviewer().review(project/'main.pdf',output/'previews',coverage,progress)
         save(reports/'local_qa.json',qa)
         navigation=NavigationBuilder().finalize(project/'main.pdf',output/'navigation',edited.registry)
-        result.update(status='complete',pages=len(audit['pages']),internal_links=audit['internal_links'],
+        valid = not any(audit[key] for key in ('missing_destinations', 'broken_links', 'outside_page', 'footnote_page_mismatches')) and not qa['issues']
+        result.update(status='complete' if valid else 'validation_failed',pages=len(audit['pages']),internal_links=audit['internal_links'],
                       outside_page=audit['outside_page'],local_qa_issues=qa['issues'],navigation_links=navigation['links'],
                       large_bottom_gap_pages=qa['large_bottom_gap_pages'])
     assert before=={p:digest(p) for p in before},'A saved input was modified'
@@ -257,11 +285,13 @@ def write_render_report(output,result):
            ('一级标题独占居中标题页；二级标题另起一页；三级及以下不强制换页。特殊块使用用户指定的类型配色，具体设置见 render_result.json 的 block_colors。小标题加粗，独立公式使用原生数学排版。' if result.get('block_colors') else
             '一级标题独占居中标题页；二级标题另起一页；三级及以下不强制换页。定义用绿色块，定理/命题/引理/推论用橙色块，算法用青色块；例题使用黑色分隔线，小标题加粗。独立公式按普通数学公式排版，不添加颜色框。'),'',
            f"原文明示名称 {s.get('named_special_blocks',0)} 个进入对象登记记录；特殊块标题显示原文的类型、编号和名称，保留原有括号、引号等符号。名称不重复出现在框内正文开头；无明确名称时不添加名称。",'',
-           (f"第二步提取的 {s.get('native_formula_special_blocks',0)} 个公式特殊块保留识别与来源记录，排版使用原生公式，不添加颜色框。文字与公式没有 OCR 纠错；编号小标题蓝色加粗，字号大于正文；例题题目用楷体、解答用仿宋。" if current else
+           (f"第二步提取的 {s.get('native_formula_special_blocks',0)} 个公式特殊块保留识别与来源记录，排版使用原生公式，不添加颜色框。排版阶段不改写识别内容；编号小标题蓝色加粗，字号大于正文；例题题目用楷体、解答用仿宋。" if current else
             f"旧 DeepSeek 结果中的 {s['ignored_legacy_formula_modules']} 个公式特殊块不再单独着色；公式原文、保存的纠错、编号与引用跳转保留。[原生公式样式记录](reports/ignored_formula_modules.json)"),'',
            f"唯一候选引用提示 {s['linked_reference_hints']} 条生成跳转；多候选、未命中或同一片段目标冲突 {s['ambiguous_or_unmatched_hints']} 条保留原文，不任选目标。名称与例题编号不参与映射。",'',
            '[未生成跳转的引用提示](reports/unlinked_reference_hints.json)','',
+           f"脚注 {s.get('footnotes',0)} 个，其中已匹配 {s.get('matched_footnotes',0)} 个按最终物理页从 1 重新编号；正文引用点使用小字号上标，与页底脚注共享编号。未匹配 {s.get('unmatched_footnotes',0)} 个保留原标号。实际页面与编号见 reports/footnote_numbering.json。",'',
            f"图表使用 htp 浮动的分组 {s['asset_float_groups']} 个：当前位置放得下就放，放不下允许正文继续并在后续页顶或浮动页显示。图表与所属图注一起移动，跳转锚点置于实际图表内。位于例题等框内的图表通过分段续框移到框外浮动；长表保留可跨页的原生 longtable。一级标题页和二级分页造成的留白属于指定规则。",'',
+           f"同排图片恢复 {s.get('horizontal_image_rows',0)} 组，共 {s.get('horizontal_images',0)} 张，保留原书左右位置、相对尺寸和邻近标签。来源及目标锚点保留在共享图片行内。",'',
            '[LaTeX 主文件](latex/main.tex) · [编译记录](reports/compilation.json) · [内容覆盖记录](reports/coverage.json)','',
            f"编译成功：{c['success']}；用时 {c['seconds']} 秒；编译警告 {len(c['warnings'])} 条。原数据和已保存的三个阶段结果保持原样。",'']
     if c['success']:

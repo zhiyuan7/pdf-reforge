@@ -2,8 +2,43 @@
 from __future__ import annotations
 from pathlib import Path
 import re
+from .footnotes import CIRCLED, SUPERSCRIPTS
 
 LEVELS = {"part": 1, "chapter": 2, "section": 3, "subsection": 4, "subsubsection": 5, "paragraph": 6}
+HEADING_END_PUNCTUATION = frozenset('。．｡.!！?？,，;；:：、…⋯)）]］}｝》〉】〕〗〙〛”’」』»›〞〟')
+HEADING_NOTE_MARK = re.compile(
+    rf'(?:[{CIRCLED}{SUPERSCRIPTS}†‡※]|\\(?:textcircled|circled)\s*\{{\s*[0-9０-９]+\s*\}}|'
+    rf'\^\s*(?:\{{\s*[0-9０-９{CIRCLED}{SUPERSCRIPTS}*†‡]+\s*\}}|[0-9０-９{CIRCLED}{SUPERSCRIPTS}*†‡]+))')
+
+
+def heading_tail_end(text, end):
+    """Include adjacent title punctuation/note marks, stopping before body text."""
+    cursor = end
+    while cursor < len(text):
+        if text[cursor].isspace() and text[cursor] not in '\r\n':
+            cursor += 1
+            continue
+        marker = HEADING_NOTE_MARK.match(text, cursor)
+        if marker:
+            cursor = marker.end()
+        elif text[cursor] in HEADING_END_PUNCTUATION:
+            cursor += 1
+        else:
+            break
+        end = cursor
+    return end
+
+
+def source_heading_end(index, lo, hi):
+    """Complete a saved title within its last source group; keep math atomic."""
+    atom = index.atoms[index.ids[index.address(hi, end=True)['atom']]]
+    limit = index.prefix[index.groups[atom['group']][-1] + 1]
+    end = lo + heading_tail_end(index.text(lo, limit), hi - lo)
+    try:
+        index.position(index.address(end, end=True))
+    except ValueError:
+        return hi
+    return end
 
 
 def compact(text):

@@ -19,6 +19,8 @@ def main(argv=None):
     modes.add_argument('--process-sections', action='store_true', help='第二步：清理、跨页配对和特殊块抽取')
     modes.add_argument('--map-references', action='store_true', help='第三步：本地类型＋编号引用映射')
     modes.add_argument('--render-processed-book', action='store_true', help='第四步：排版已保存结果并生成 PDF')
+    modes.add_argument('--correct-formulas', action='store_true', help='按整页宽横带二次识别与文字重叠的公式')
+    parser.add_argument('--formula-corrections', type=Path, help='已完成的 formula_corrections.json；各后续阶段复用同一版本')
     parser.add_argument('--heading-report', type=Path, help='第一步结果目录')
     parser.add_argument('--processed-book-dir', type=Path, help='第二步完整结果目录')
     parser.add_argument('--mapping-report', type=Path, help='第三步结果目录')
@@ -41,15 +43,22 @@ def main(argv=None):
             from .pipeline import load_book, load_metadata, match_headings, process_content, run_workflow
             progress = lambda stage, n, total: print(f'{stage}: {n}/{total}', flush=True)
             stage = ('headings' if args.match_headings else 'content' if args.process_sections else
-                     'references' if args.map_references else 'pdf' if args.render_processed_book else None)
+                     'references' if args.map_references else 'pdf' if args.render_processed_book else
+                     'formula_corrections' if args.correct_formulas else None)
             output = args.output or ROOT / 'output' / args.pdf.stem
             if stage and not args.output:
                 output = output / stage
             if stage:
                 if not args.mineru_dir:
                     parser.error('单独运行阶段时需要 --mineru-dir')
-                index = load_book(args.pdf, args.mineru_dir)
-                if args.match_headings:
+                index = load_book(args.pdf, args.mineru_dir, args.formula_corrections)
+                if args.correct_formulas:
+                    if args.formula_corrections:
+                        parser.error('--correct-formulas 使用原始 OCR，不能同时提供 --formula-corrections')
+                    from book_pipeline.ingestion.formula_bands import correct_formula_bands
+                    correction = correct_formula_bands(index, config, output, progress)
+                    result = dict(status=correction['status'], regions=len(correction['records']), usage=correction['usage'])
+                elif args.match_headings:
                     result = match_headings(index, load_metadata(args.pdf, args.metadata), config, output, progress)
                 elif args.process_sections:
                     if not args.heading_report:

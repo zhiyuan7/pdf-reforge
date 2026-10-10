@@ -10,7 +10,7 @@ from pathlib import Path
 from book_pipeline.ai.client import DecisionUncertain
 from book_pipeline.config import save
 from book_pipeline.ingestion.source import SourceIndex, load_source
-from .headings import group_blocks, parse_number, span_for
+from .headings import group_blocks, heading_tail_end, parse_number, span_for
 from .layout import analyze_layout, apply_layout_to_outline, printed_number, project_layout
 from .toc_catalog import normalized, occurrences, read_catalog
 from .exercise_headings import classify_exercise_headings
@@ -50,6 +50,7 @@ class TocMatcher:
         return [b for b in blocks if self.positions[b['group']][0] < hi and self.positions[b['group']][1] > lo]
 
     def match(self, entry, block, lo, hi, method, evidence):
+        hi = heading_tail_end(block['text'], hi)
         span = span_for(self.index, block, {'start_offset':lo,'end_offset':hi})
         start, end = self.index.span(span)
         return {'toc_id':entry['id'],'group':block['group'],'page':block['page'],'source_type':block['type'],

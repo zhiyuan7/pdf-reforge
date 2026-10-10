@@ -39,13 +39,14 @@ def api_proxy(base_url):
 
 
 class DeepSeekClient:
-    def __init__(self, config, cache_dir, transport=None, sleep=time.sleep):
+    def __init__(self, config, cache_dir, transport=None, sleep=time.sleep, capture_responses=False):
         self.config = config
         self.cache = Path(cache_dir)
         self.cache.mkdir(parents=True, exist_ok=True)
         self.sleep = sleep
         self.lock = threading.Lock()
         self.transport = transport
+        self.capture_responses = capture_responses
         self.calls = self.cache / "usage.jsonl"
         self.cancel = threading.Event()
         self._api = None
@@ -148,6 +149,8 @@ class DeepSeekClient:
                     raw = {"content": answer.choices[0].message.content,
                            "finish_reason": answer.choices[0].finish_reason,
                            "usage": answer.usage.model_dump() if answer.usage else {}}
+                    if self.capture_responses:
+                        save(self.cache / 'responses' / (key + f'.{attempt}.json'), answer.model_dump())
             except APIFailure:
                 self.record(task, attempt, error="APIFailure")
                 raise
