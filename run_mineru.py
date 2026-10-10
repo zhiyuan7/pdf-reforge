@@ -16,7 +16,7 @@ import sys
 import time
 
 from pipeline_progress import emit
-from mineru_checkpoint import checkpoint_path, expand_empty_pages, read_checkpoint, write_checkpoint, sha256
+from mineru_checkpoint import checkpoint_path, expand_empty_pages, read_checkpoint, write_checkpoint, sha256, recognize_pages
 
 
 ROOT = Path(__file__).resolve().parent
@@ -29,7 +29,7 @@ def arguments() -> argparse.Namespace:
     parser.add_argument("--tier", choices=("flash", "basic", "standard", "advanced"), default="standard")
     parser.add_argument("--pages", default="all", help="全部页面用 all；部分页面如 1-3,5（从 1 开始）")
     parser.add_argument("--ocr-mode", choices=("auto", "txt", "ocr"), default="auto")
-    parser.add_argument('--checkpoint-dir',type=Path,help='持久推理缓存目录；导出失败后复用已完成的推理')
+    parser.add_argument('--checkpoint-dir',type=Path,help='逐页持久缓存目录；中断后复用已完成的页面')
     parser.add_argument('--refresh-inference',action='store_true',help='重新推理，忽略已有推理缓存')
     parser.add_argument(
         "--model-source", choices=("auto", "huggingface", "modelscope", "local"),
@@ -83,6 +83,7 @@ def run(args: argparse.Namespace) -> Path:
     # 必须在导入 MinerU 前配置，避免模块初始化时读取到其他设置。
     os.environ["MINERU_MODEL_SOURCE"] = args.model_source
     from mineru.parser import parse
+    from mineru.parser.page_range import parse_page_range
     from mineru.parser.writer import FileBasedDataWriter
     import pypdfium2 as pdfium
 
@@ -92,13 +93,29 @@ def run(args: argparse.Namespace) -> Path:
     print(f"MinerU {version('mineru')} / tier={args.tier} / pages={args.pages}", flush=True)
     started = time.monotonic()
     input_sha256=sha256(pdf)
-    signature={'schema_version':1,'input_sha256':input_sha256,'source_page_count':source_page_count,
+    legacy_signature={'schema_version':1,'input_sha256':input_sha256,'source_page_count':source_page_count,
         'tier':args.tier,'ocr_mode':args.ocr_mode,'page_range':args.pages,'model_source':args.model_source,
         'mineru_version':version('mineru'),'docvortex_version':version('docvortex')}
+    signature={**legacy_signature,'schema_version':2,'inference_mode':'pagewise_v1'}
+    page_indices=parse_page_range(args.pages,source_page_count)
     cache_root=getattr(args,'checkpoint_dir',None) or output.parent/'.cache/mineru_inference'
-    checkpoint=checkpoint_path(Path(cache_root).expanduser().resolve(),signature)
-    payload=None if getattr(args,'refresh_inference',False) else read_checkpoint(checkpoint,signature)
+    cache_root=Path(cache_root).expanduser().resolve()
+    checkpoint=checkpoint_path(cache_root,signature)
+    page_signature={k:v for k,v in signature.items() if k!='page_range'}
+    page_cache=checkpoint_path(cache_root/'pages',page_signature)
+    payload=None
+    refresh=getattr(args,'refresh_inference',False)
+    if not refresh:
+        for path, stamp in ((checkpoint,signature),(checkpoint_path(cache_root,legacy_signature),legacy_signature)):
+            try:
+                payload=read_checkpoint(path,stamp)
+            except (OSError,ValueError,EOFError):
+                print(f'整本缓存未通过校验，改用逐页缓存恢复：{path}',flush=True)
+            if payload is not None:
+                checkpoint=path
+                break
     inference_reused=payload is not None
+    reused_pages=[p+1 for p in page_indices] if inference_reused else []
     if inference_reused:
         from mineru.parser import ParseResult
         from mineru.types import ModelJson
@@ -106,19 +123,39 @@ def run(args: argparse.Namespace) -> Path:
         model=ModelJson.from_dict(payload['model_output']) if payload.get('model_output') is not None else None
         result=ParseResult(parsed.middle_json,model)
         print(f'已校验并复用 MinerU 推理缓存，继续导出：{checkpoint}',flush=True)
-        emit('复用已完成的 MinerU 推理',source_page_count,source_page_count)
+        emit('复用已完成的 MinerU 推理',len(page_indices),len(page_indices))
     else:
-        emit('MinerU 加载与识别',0,source_page_count)
-        result = parse(str(pdf), tier=args.tier, ocr_mode=args.ocr_mode, page_range=args.pages)
-        if sha256(pdf)!=input_sha256:raise RuntimeError('输入 PDF 在推理期间发生变化，未提交推理缓存')
-        emit('持久保存 MinerU 推理',source_page_count,source_page_count)
-        # Save full typed content, including image payloads, before any rendering.
-        payload={'middle_json':result.middle_json.to_dict(skip_defaults=False),
-            'model_output':result._model_output.to_dict(skip_defaults=False) if result._model_output is not None else None}
+        emit('MinerU 加载与识别',0,len(page_indices))
+        source_stamp=pdf.stat()
+        def check_source():
+            current=pdf.stat()
+            if (current.st_ino,current.st_size,current.st_mtime_ns,current.st_ctime_ns)!=(source_stamp.st_ino,source_stamp.st_size,source_stamp.st_mtime_ns,source_stamp.st_ctime_ns):
+                raise RuntimeError('输入 PDF 在推理期间发生变化，未提交该页缓存')
+        def parse_page(page_idx):
+            parsed=parse(str(pdf),tier=args.tier,ocr_mode=args.ocr_mode,page_range=str(page_idx+1))
+            return {'middle_json':parsed.middle_json.to_dict(skip_defaults=False),
+                    'model_output':parsed._model_output.to_dict(skip_defaults=False) if parsed._model_output is not None else None}
+        def page_progress(phase,done,total,page_number):
+            emit(phase,done,total,detail=f'原 PDF 第 {page_number} 页',page_number=page_number)
+            if phase!='识别单页':
+                print(f'{phase}：第 {page_number} 页（已保存 {done}/{total} 页）',flush=True)
+        try:
+            payload,reused_pages=recognize_pages(page_indices,source_page_count,page_signature,page_cache,parse_page,
+                                                refresh=refresh,progress=page_progress,check_source=check_source)
+        except BaseException:
+            print(f'识别已中断；已完成页面保留在 {page_cache}，以相同参数重跑即可继续。',file=sys.stderr,flush=True)
+            raise
+        if sha256(pdf)!=input_sha256:raise RuntimeError('输入 PDF 在推理期间发生变化，未提交整本缓存')
+        from mineru.parser import ParseResult
+        from mineru.types import ModelJson
+        parsed=ParseResult.from_dict(payload['middle_json'])
+        model=ModelJson.from_dict(payload['model_output']) if payload.get('model_output') is not None else None
+        result=ParseResult(parsed.middle_json,model)
+        emit('持久保存 MinerU 推理',len(page_indices),len(page_indices))
         write_checkpoint(checkpoint,signature,payload)
         print(f'MinerU 推理已持久保存：{checkpoint}',flush=True)
         del payload
-    emit('保存 MinerU 结果',source_page_count,source_page_count)
+    emit('保存 MinerU 结果',len(page_indices),len(page_indices))
 
     output.parent.mkdir(parents=True, exist_ok=True)
     # Keep unfinished exports on disk as well. Only a validated directory is
@@ -160,6 +197,8 @@ def run(args: argparse.Namespace) -> Path:
             "pages_without_recognized_blocks":empty_pages,
             "inference_checkpoint":str(checkpoint),
             "inference_reused":inference_reused,
+            "page_checkpoint_directory":str(page_cache),
+            "reused_page_numbers":reused_pages,
             "source_page_numbers": [index + 1 for index in page_indices],
             "is_full_document": middle["is_full_document"],
             "block_counts": dict(block_counts),

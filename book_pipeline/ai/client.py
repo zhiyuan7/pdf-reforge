@@ -9,6 +9,8 @@ from pathlib import Path
 import random
 import threading
 import time
+from urllib.parse import urlsplit
+from urllib.request import getproxies, proxy_bypass
 
 from book_pipeline.config import ROOT, digest, fingerprint, read, save, load_environment
 from book_pipeline.ai.costs import estimate, UsageLedger
@@ -20,6 +22,20 @@ class APIFailure(RuntimeError):
 
 class DecisionUncertain(RuntimeError):
     """Invalid semantic responses may fall back to source-preserving output."""
+
+
+def api_proxy(base_url):
+    """Select only this API's proxy; an unrelated ALL_PROXY may be invalid."""
+    url = urlsplit(base_url)
+    if proxy_bypass(url.netloc):
+        return None
+    proxies = getproxies()
+    proxy = proxies.get(url.scheme) or proxies.get('all')
+    if proxy and '://' not in proxy:
+        proxy = 'http://' + proxy
+    if proxy and proxy.startswith('socks://'):
+        proxy = 'socks5://' + proxy[len('socks://'):]
+    return proxy
 
 
 class DeepSeekClient:
@@ -39,13 +55,29 @@ class DeepSeekClient:
 
     def _connect(self):
         if self._api is None:
-            from openai import OpenAI
             load_environment()
             key = os.environ.get(self.config["api_key_env"])
             if not key:
                 raise APIFailure("Missing environment variable " + self.config["api_key_env"])
-            self._api = OpenAI(api_key=key, base_url=self.config["base_url"],
-                              timeout=self.config["timeout_seconds"], max_retries=0)
+            try:
+                from httpx import HTTPTransport
+                from openai import OpenAI, DefaultHttpxClient
+                # An explicit transport avoids parsing unused environment proxies
+                # while keeping environment CA certificates available for TLS.
+                transport = HTTPTransport(proxy=api_proxy(self.config["base_url"]))
+                http = DefaultHttpxClient(transport=transport, timeout=self.config["timeout_seconds"])
+                try:
+                    self._api = OpenAI(api_key=key, base_url=self.config["base_url"],
+                                       timeout=self.config["timeout_seconds"], max_retries=0, http_client=http)
+                except Exception:
+                    http.close()
+                    raise
+            except ImportError:
+                raise APIFailure('DeepSeek 客户端依赖缺失；请运行 pip install -r requirements.txt（包含 SOCKS 代理支持）。') from None
+            except ValueError:
+                # Proxy exceptions can contain credentials; never expose them.
+                raise APIFailure('DeepSeek 客户端初始化失败；请检查接口地址和 HTTP_PROXY / HTTPS_PROXY / ALL_PROXY，'
+                                 '代理协议支持 http、https、socks5、socks5h。') from None
 
     @property
     def api(self):
@@ -98,7 +130,7 @@ class DeepSeekClient:
             data = base64.b64encode(image.read_bytes()).decode()
             content.append({"type": "image_url", "image_url": {"url": "data:" + mime + ";base64," + data, "detail": "high"}})
         messages = [{"role": "system", "content": system}, {"role": "user", "content": content}]
-        last_type, service_failures = "invalid_response", 0
+        last_type = "invalid_response"
         last_service_failure = False
         for attempt in range(1, self.config["attempts"] + 1):
             if self.cancel.is_set():
@@ -116,25 +148,9 @@ class DeepSeekClient:
                     raw = {"content": answer.choices[0].message.content,
                            "finish_reason": answer.choices[0].finish_reason,
                            "usage": answer.usage.model_dump() if answer.usage else {}}
-                last_service_failure = False
-                self.record(task, attempt, raw.get("usage"))
-                if raw.get("finish_reason") != "stop" or not raw.get("content"):
-                    raise ValueError("Empty or truncated JSON response")
-                result = json.loads(raw["content"])
-                if not isinstance(result, dict):
-                    raise ValueError("JSON result must be an object")
-                if validator:
-                    validator(result)
-                save(path, {"key": key, "result": result, "result_sha256": fingerprint(result)})
-                return result
-            except (ValueError, KeyError, TypeError, AttributeError, IndexError) as error:
-                last_type = type(error).__name__
-                save(self.cache / "invalid" / (key + f".{attempt}.json"),
-                     {"task": task, "attempt": attempt, "validation_error": str(error)[:500],
-                      "response": raw.get("content", "") if isinstance(raw, dict) else ""})
-                # No invalid result is cached. Give the model the validation failure.
-                messages.append({"role": "user", "content": "Return corrected JSON only. Validation error: " + str(error)[:500]})
-                self.record(task, attempt, error=last_type)
+            except APIFailure:
+                self.record(task, attempt, error="APIFailure")
+                raise
             except Exception as error:
                 last_service_failure = True
                 code = getattr(error, "status_code", None)
@@ -142,7 +158,27 @@ class DeepSeekClient:
                 self.record(task, attempt, error=last_type)
                 if code in (400, 401, 402, 403, 404, 422):
                     raise APIFailure(f"DeepSeek request rejected (HTTP {code}); check key, model and vision/JSON support") from None
-                service_failures += 1
+            else:
+                last_service_failure = False
+                try:
+                    self.record(task, attempt, raw.get("usage"))
+                    if raw.get("finish_reason") != "stop" or not raw.get("content"):
+                        raise ValueError("Empty or truncated JSON response")
+                    result = json.loads(raw["content"])
+                    if not isinstance(result, dict):
+                        raise ValueError("JSON result must be an object")
+                    if validator:
+                        validator(result)
+                    save(path, {"key": key, "result": result, "result_sha256": fingerprint(result)})
+                    return result
+                except (ValueError, KeyError, TypeError, AttributeError, IndexError) as error:
+                    last_type = type(error).__name__
+                    save(self.cache / "invalid" / (key + f".{attempt}.json"),
+                         {"task": task, "attempt": attempt, "validation_error": str(error)[:500],
+                          "response": raw.get("content", "") if isinstance(raw, dict) else ""})
+                    # Only actual response validation errors are sent to the model.
+                    messages.append({"role": "user", "content": "Return corrected JSON only. Validation error: " + str(error)[:500]})
+                    self.record(task, attempt, error=last_type)
             if attempt < self.config["attempts"]:
                 self.sleep(min(30, 2 ** attempt + random.random()))
         if last_service_failure:

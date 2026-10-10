@@ -31,5 +31,14 @@ def audit_pdf(pdf, coverage, registry=()):
                 ("nameddest" in row[3] and row[3]["nameddest"] != o["anchor"])
                 for row, o in zip(actual_headings, expected_headings))):
             raise ValueError("PDF bookmark does not point to its source heading")
+        footnotes = []
+        for note in coverage.get('footnotes', []):
+            destination = destinations[note['anchor']]
+            reference = destinations.get(note['reference_anchor']) if note['status']=='matched' else None
+            footnotes.append(dict(id=note['id'], status=note['status'], source_page=note['page'],
+                                  rendered_page=destination['page']+1,
+                                  reference_page=reference['page']+1 if reference else None,
+                                  same_page=reference['page']==destination['page'] if reference else None))
         return {"pages": pages, "internal_links": links, "bookmarks": len(doc.get_toc()), "named_destinations": len(destinations),
-                "missing_destinations": [], "broken_links": [], "outside_page": outside}
+                "missing_destinations": [], "broken_links": [], "outside_page": outside,
+                'footnotes':footnotes, 'footnote_page_mismatches':[n for n in footnotes if n['same_page'] is False]}

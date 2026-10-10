@@ -1,0 +1,153 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="theme-color" content="#0E86E1">
+  <title>PDF 回炉所 · 书稿工作台</title>
+  <link rel="icon" href="data:,">
+  <link rel="stylesheet" href="/static/style.css">
+  <script src="/static/lucide.min.js" defer></script>
+  <script src="/static/app.js" defer></script>
+</head>
+<body>
+  <aside class="sidebar">
+    <a class="brand" href="/" aria-label="PDF 回炉所首页">
+      <span class="brand-mark"><i data-lucide="book-open"></i></span>
+      <span><strong>PDF 回炉所</strong><small>PDF REFORGE</small></span>
+    </a>
+    <nav aria-label="主导航">
+      <button class="nav-item active" id="workspace-nav"><i data-lucide="panels-top-left"></i><span>书稿工作台</span></button>
+      <button class="nav-item" id="history-nav"><i data-lucide="library"></i><span>我的书稿</span><span class="nav-count" id="job-count">0</span></button>
+    </nav>
+    <div class="sidebar-bottom">
+      <div class="environment"><span class="status-dot" id="env-dot"></span><span id="env-label">检查运行环境</span></div>
+      <div id="env-details" class="env-details"></div>
+      <div class="local-label"><i data-lucide="hard-drive"></i>本地工作空间</div>
+    </div>
+  </aside>
+  <main>
+    <header class="topbar">
+      <div class="breadcrumb">工作空间 <i data-lucide="chevron-right"></i><span id="breadcrumb-current">书稿工作台</span></div>
+      <button id="new-book" class="button primary small"><i data-lucide="plus"></i>新建书稿</button>
+    </header>
+    <section id="workspace-view">
+      <div class="page-heading">
+        <div><p class="eyebrow">BOOK WORKSPACE</p><h1>书稿工作台</h1></div>
+        <span class="job-status" id="job-status"><span class="status-dot"></span>等待上传</span>
+      </div>
+      <ol class="workflow" aria-label="书稿处理步骤">
+        <li class="current" data-step="0"><span class="step-number">01</span><span>上传书籍</span><i data-lucide="chevron-right"></i></li>
+        <li data-step="1"><span class="step-number">02</span><span>识别与整理</span><i data-lucide="chevron-right"></i></li>
+        <li data-step="2"><span class="step-number">03</span><span>样式与预览</span></li>
+      </ol>
+      <div class="workbench">
+        <section class="editor" aria-label="书稿设置">
+          <div class="editor-tabs" role="tablist" aria-label="书稿设置视图">
+            <button id="info-tab" role="tab" aria-selected="true" data-panel="info" class="active">书籍信息</button>
+            <button id="keywords-tab" role="tab" aria-selected="false" data-panel="keywords">匹配规则</button>
+            <button id="progress-tab" role="tab" aria-selected="false" data-panel="progress">处理进度</button>
+            <button id="colors-tab" role="tab" aria-selected="false" data-panel="colors" disabled>排版样式</button>
+          </div>
+          <div class="editor-panel" id="keywords-panel" role="tabpanel" aria-labelledby="keywords-tab" hidden>
+            <div class="section-heading"><h2>候选关键词</h2><button class="icon-button" id="reset-keywords" title="恢复默认候选" aria-label="恢复默认候选"><i data-lucide="rotate-ccw"></i></button></div>
+            <p class="style-note">每行一项，可添加、修改或删除；留空可关闭该类匹配。全篇匹配至少 10 处后才交给 DeepSeek 判断，同一位置优先匹配更完整的关键词。确认后按关键词或编号形式分别计数，超过 10 个才保留为特殊块。</p>
+            <div class="form-field"><label for="statement-keywords">定理与公式</label><textarea id="statement-keywords" rows="5" spellcheck="false" placeholder="定理&#10;公式&#10;命题&#10;公理"></textarea></div>
+            <div class="form-field"><label for="example-keywords">例题</label><textarea id="example-keywords" rows="3" spellcheck="false" placeholder="例题&#10;例&#10;Example"></textarea></div>
+            <div class="form-field"><label for="subheading-keywords">小标题编号形式</label><textarea id="subheading-keywords" rows="6" spellcheck="false" placeholder="数字.数字&#10;汉字、&#10;(汉字)&#10;小写字母.&#10;大写字母."></textarea></div>
+            <p class="style-note">用“数字、汉字、小写字母、大写字母、罗马数字、希腊字母”表示编号，可组合最多六层，例如“大写字母.数字”。a. 与 A. 分别计数、设置字号和删除。旧“字母”形式自动拆为大小写两类。支持全角括号和点号。</p>
+            <p class="style-note">罗马数字匹配 i/v/x（含大写）及合法多字符编号；单独的 c/d/l/m（含大写）归字母。</p>
+            <p class="inline-error" id="keyword-error" role="alert" hidden></p>
+            <p class="style-note" id="keyword-status" role="status"></p>
+            <button class="button secondary full" id="save-keywords">保存候选集合</button>
+            <p class="style-note">保存并重新识别会清空之前手动删除特殊块的记录，重新判断所有候选。</p>
+            <button class="button primary full" id="apply-keywords" hidden>保存并重新识别</button>
+          </div>
+          <div class="editor-panel" id="info-panel" role="tabpanel" aria-labelledby="info-tab">
+            <div class="section-heading"><h2>原始书籍</h2><span class="subtle">PDF</span></div>
+            <form id="upload-form">
+              <input type="file" id="file-input" accept=".pdf,application/pdf" hidden>
+              <button type="button" class="dropzone" id="dropzone">
+                <span class="upload-icon"><i data-lucide="upload"></i></span>
+                <strong>选择 PDF 文件</strong><span>或将文件拖放至此</span><small>PDF · 最大 1 GB</small>
+              </button>
+              <div class="selected-file" id="selected-file" hidden>
+                <span class="file-icon"><i data-lucide="file-text"></i></span>
+                <div><strong id="file-name"></strong><small id="file-size"></small></div>
+                <button type="button" id="remove-file" class="icon-button" title="移除文件" aria-label="移除文件"><i data-lucide="x"></i></button>
+              </div>
+              <div class="form-field"><label for="book-title">书名 <span>*</span></label><input id="book-title" name="title" required maxlength="240" placeholder="输入书籍名称" autocomplete="off"></div>
+              <div class="form-field"><label for="book-author">作者 <span>*</span></label><input id="book-author" name="author" required maxlength="240" placeholder="输入作者姓名" autocomplete="off"></div>
+              <div class="upload-meter" id="upload-meter" hidden><div><span>文件上传中</span><strong id="upload-percent">0%</strong></div><progress id="upload-progress" max="100" value="0"></progress></div>
+              <p class="inline-error" id="form-error" role="alert" hidden></p>
+              <button type="submit" id="start-processing" class="button primary full"><i data-lucide="scan-text"></i><span>开始处理</span><i data-lucide="arrow-right"></i></button>
+            </form>
+          </div>
+          <div class="editor-panel" id="progress-panel" role="tabpanel" aria-labelledby="progress-tab" hidden>
+            <div class="section-heading"><h2>处理进度</h2><span class="subtle" id="stage-count">0 / 5</span></div>
+            <div class="processing-book"><i data-lucide="book-open-text"></i><div><strong id="processing-title">尚未上传书籍</strong><span id="processing-author"></span></div></div>
+            <div class="stage-list" id="stage-list"></div>
+            <div class="job-error" id="job-error" role="alert" hidden></div>
+            <button class="button secondary full" id="retry-job" hidden><i data-lucide="rotate-ccw"></i>继续处理</button>
+            <button class="button primary full" id="go-colors" hidden><i data-lucide="palette"></i>设置排版样式<i data-lucide="arrow-right"></i></button>
+          </div>
+          <div class="editor-panel color-panel" id="colors-panel" role="tabpanel" aria-labelledby="colors-tab" hidden>
+            <div class="section-heading"><h2>字号与类型配色</h2><button class="icon-button" id="reset-colors" title="恢复推荐样式" aria-label="恢复推荐样式"><i data-lucide="rotate-ccw"></i></button></div>
+            <div class="style-options">
+              <div class="typography-settings" id="typography-settings">
+                <label class="size-row" for="body-size"><span>正文<small>推荐 10.5 pt</small></span><span><input id="body-size" type="number" min="9" max="18" step="0.5" value="10.5" aria-label="正文字号"><span>pt</span></span></label>
+                <div id="subheading-sizes"></div>
+                <p class="style-note">小标题统一蓝色、加粗，字号大于正文。</p>
+                <p class="style-note">例题：题目用楷体，解答用细笔画仿宋；细上边线、粗下边线。</p>
+              </div>
+              <div class="color-list" id="color-list"></div>
+              <p class="style-note">删除此类型会将该类全部特殊块恢复为普通正文；小标题按编号形式分别删除。</p>
+              <button class="button secondary small full" id="refresh-blocks-button">更新特殊块识别</button>
+            </div>
+            <div class="color-footer"><span id="color-summary" class="subtle">尚无特殊块</span><span id="dirty-status"></span></div>
+            <p class="color-hint">正文对照＋每类一个真实样例，预览字号、配色和例题效果。</p>
+            <button class="button primary full" id="render-button"><i data-lucide="refresh-cw"></i><span>生成预览</span></button>
+            <button class="button secondary full" id="render-book-button"><i data-lucide="book-open"></i><span>生成整本 PDF</span></button>
+          </div>
+        </section>
+        <section class="preview" aria-label="书稿预览">
+          <div class="preview-toolbar">
+            <div class="preview-tabs" role="tablist" aria-label="预览视图">
+              <button class="active" role="tab" aria-selected="true" data-preview="samples"><i data-lucide="palette"></i><span>样例预览</span></button>
+              <button role="tab" aria-selected="false" data-preview="blocks"><i data-lucide="blocks"></i><span>特殊块</span><span id="block-count"></span></button>
+              <button role="tab" aria-selected="false" data-preview="page"><i data-lucide="file-text"></i><span>整书 PDF</span></button>
+              <button role="tab" aria-selected="false" data-preview="toc"><i data-lucide="list-tree"></i><span>目录</span></button>
+            </div>
+            <a id="download-pdf" class="icon-button disabled" title="下载整书 PDF" aria-label="下载整书 PDF" aria-disabled="true"><i data-lucide="download"></i></a>
+          </div>
+          <div class="preview-view sample-view" id="samples-preview" role="tabpanel">
+            <div class="preview-notice" id="sample-notice" hidden><i data-lucide="palette"></i>样式已调整，请重新生成样例预览</div>
+            <div class="sample-message" id="sample-message" role="status"></div>
+            <div id="sample-list" class="sample-list"></div>
+          </div>
+          <div class="preview-view page-view" id="page-preview" role="tabpanel" hidden>
+            <div class="preview-notice" id="preview-notice" hidden><i data-lucide="palette"></i>样式或识别结果已更新，请重新生成整本 PDF</div>
+            <div id="empty-preview" class="empty-preview"><span class="empty-icon"><i data-lucide="file-text"></i></span><h2>尚未生成书稿</h2><span id="empty-detail">等待书籍处理</span></div>
+            <div class="page-scroll" id="page-scroll" hidden><img id="pdf-page" alt="渲染后的书稿页面"><div class="image-error" id="image-error" hidden>页面加载失败<button class="button secondary small" id="reload-page">重新加载</button></div></div>
+            <div class="page-controls" id="page-controls">
+              <div class="zoom-controls"><button id="zoom-out" class="icon-button" title="缩小" aria-label="缩小"><i data-lucide="minus"></i></button><span id="zoom-label">100%</span><button id="zoom-in" class="icon-button" title="放大" aria-label="放大"><i data-lucide="plus"></i></button></div>
+              <div class="pagination"><button id="previous-page" class="icon-button" title="上一页" aria-label="上一页"><i data-lucide="chevron-left"></i></button><input id="page-number" type="number" value="1" min="1" aria-label="页码"><span id="page-total">/ 0</span><button id="next-page" class="icon-button" title="下一页" aria-label="下一页"><i data-lucide="chevron-right"></i></button></div>
+              <button id="fit-page" class="icon-button" title="适合宽度" aria-label="适合宽度"><i data-lucide="maximize"></i></button>
+            </div>
+          </div>
+          <div class="preview-view list-view" id="blocks-preview" role="tabpanel" hidden>
+            <div class="list-filters"><div class="search-field"><i data-lucide="search"></i><input id="block-search" placeholder="搜索特殊块" aria-label="搜索特殊块"></div><select id="block-filter" aria-label="特殊块类型"><option value="">全部类型</option></select></div>
+            <p class="style-note">在“排版样式”中可删除某个类型的全部特殊块身份，原文保留。</p>
+            <div id="block-list" class="block-list"></div>
+          </div>
+          <div class="preview-view list-view" id="toc-preview" role="tabpanel" hidden><div id="toc-list" class="toc-list"></div></div>
+          <div class="preview-footer"><span><i data-lucide="check-check"></i><span id="preview-status">等待处理</span></span><span id="preview-book-label">PDF 回炉所</span></div>
+        </section>
+      </div>
+      <section class="recent-section"><div class="section-heading"><h2>最近书稿</h2><button id="view-all" class="text-button">查看全部<i data-lucide="arrow-up-right"></i></button></div><div id="recent-jobs" class="recent-jobs"></div></section>
+    </section>
+    <section id="history-view" hidden><div class="page-heading"><div><p class="eyebrow">YOUR LIBRARY</p><h1>我的书稿</h1></div></div><div class="history-table"><div class="history-table-head"><span>书籍</span><span>页数</span><span>状态</span><span>更新时间</span></div><div id="all-jobs"></div></div></section>
+  </main>
+  <div id="toast" class="toast" role="status" hidden></div>
+</body>
+</html>

@@ -11,7 +11,7 @@ import tarfile
 from urllib.request import urlopen
 
 ROOT = Path(__file__).resolve().parent
-PACKAGES = "ctex xecjk fandol zhnumber tcolorbox biblatex needspace adjustbox newtx tex-gyre xstring etoolbox kvoptions titlesec appendix apptools adforn fixtounicode tocloft mwe makecell hologo fancyvrb enumitem footmisc multirow booktabs csquotes psnfss manfnt bbding wasysym esint setspace comment mathtools arydshln".split()
+PACKAGES = "ctex xecjk fandol zhnumber tcolorbox biblatex needspace adjustbox newtx txfonts tex-gyre xstring etoolbox kvoptions titlesec appendix apptools adforn fixtounicode tocloft mwe makecell hologo fancyvrb enumitem footmisc multirow booktabs csquotes psnfss manfnt bbding wasysym esint setspace comment mathtools arydshln".split()
 
 
 def main():

@@ -5,6 +5,10 @@ import re
 def math_compatibility(text):
     """Preserve formula tokens while making simple OCR arrays valid TeX."""
     changes=[]
+    def operator_alias(match):
+        changes.append('nonstandard OCR operator rendered with operatorname; original operator spelling preserved')
+        return r'\operatorname{' + match[1] + '}'
+    text=re.sub(r'\\(ctan)\b',operator_alias,text)
     def circled(match):
         number=int(match[1])
         if not 1<=number<=20:return match[0]

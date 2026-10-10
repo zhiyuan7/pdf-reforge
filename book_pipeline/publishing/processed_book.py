@@ -48,21 +48,20 @@ class EditedBook:
             if t['kind']=='heading':lo,hi=self.heading_spans[t['context']['heading']]
             else:lo,hi=self.project(t['lo'],t['hi'])
             kind={'other':'remark'}.get(t['kind'],t['kind'])
-            anchor_only=t['kind']=='subheading'
             if t['kind']=='heading':
                 h=next(s['heading'] for s in book['sections'] if s['id']==t['context']['heading'])
                 kind=h['kind']
             item={**t,'kind':kind,'lo':lo,'hi':hi,'anchor':'book-'+t['id'],
                   'start':self.index.address(lo),'end':self.index.address(hi,end=True)}
+            for field in ('question_ranges', 'answer_ranges'):
+                if field in t:
+                    item[field] = [dict(zip(('lo', 'hi'), self.project(r['lo'], r['hi']))) for r in t[field]]
             if t.get('caption_block'):
                 parts=self.block_parts[t['caption_block']]
                 first,last=self.index.ids[parts[0]['atom']],self.index.ids[parts[-1]['atom']]
                 item['caption_span']=[self.index.prefix[first],self.index.prefix[last+1]]
             if t['kind']=='heading':item.update(heading_level=h['heading_level'],toc_category=h['toc_category'],toc_id=h['toc_id'])
-            if anchor_only:
-                item['anchor_only']=True
-                self.bold.append({'start':item['start'],'end':item['end']})
-            elif t['kind'] not in {'heading','equation','figure','table'}:
+            if t['kind'] not in {'heading','equation','figure','table','subheading'}:
                 title_end=t.get('declaration_hi',t['lo'])
                 if t['lo']<title_end<t['hi']:
                     _,end=self.project(t['lo'],title_end)
@@ -96,6 +95,23 @@ class EditedBook:
                 self.ignored_formula_modules.append(dict(section=s['id'],number=module['number'],
                     name=module.get('name',''),start=module['start'],end=module['end'],method=module.get('method','legacy')))
         self.registry.sort(key=lambda r:(r['lo'],-r['hi'],r['anchor']))
+        self.footnotes = []
+        retained_blocks = {b['b'] for b in book['blocks']}
+        for note in book.get('footnotes', []):
+            if note['block'] not in retained_blocks:
+                continue
+            lo, hi = self.project(note['lo'], note['hi'])
+            item = {**note, 'lo':lo, 'hi':hi, 'anchor':'book-'+note['id'],
+                    'reference_anchor':'ref-'+note['id'], 'source_lo':note['lo'], 'source_hi':note['hi']}
+            reference = note.get('reference')
+            if reference:
+                a, z = self.project(reference['lo'], reference['hi'])
+                atom = self.index.atoms[self.index.ids[self.index.address(z, True)['atom']]]
+                item['insert_after'] = z if atom['kind']=='text' else self.index.prefix[self.index.ids[atom['id']]+1]
+                item['reference'] = {**reference, 'edited_lo':a, 'edited_hi':z}
+            else:
+                item['insert_after'] = lo
+            self.footnotes.append(item)
 
     def append(self,atom,a,z,text,group,block,char):
         if not text and atom['kind']=='text':return None
@@ -177,7 +193,8 @@ def render_saved_book(original,processing,mapping_directory,metadata,config,outp
     tools=doctor(config,require_key=False)
     progress('读取已保存的三阶段结果',1,1)
     edited=EditedBook(original,book,processing);references=edited.map_hints(mapping)
-    decisions=dict(objects=[],exclusions=[],corrections=[],joins=[],issues=[],bold_spans=edited.bold)
+    decisions=dict(objects=[],exclusions=[],corrections=[],joins=[],issues=[],bold_spans=edited.bold,
+                   page_footnotes=edited.footnotes)
     settings={**metadata['heading_layout'],'standalone_levels':[1],'page_break_after_levels':[2]}
     native_config={**config,'float_assets':True,'start_page_levels':[2]}
     project=output/'latex';reports=output/'reports';reports.mkdir(parents=True,exist_ok=True)
@@ -185,6 +202,7 @@ def render_saved_book(original,processing,mapping_directory,metadata,config,outp
          processed_sha256=book['processed_sha256'],targets_sha256=mapping['targets_sha256'],input_files_sha256=before))
     save(reports/'edited_source.json',edited.index.source)
     save(reports/'render_registry.json',edited.registry)
+    save(reports/'footnotes.json',edited.footnotes)
     save(reports/'render_references.json',references)
     save(reports/'unlinked_reference_hints.json',edited.unlinked)
     save(reports/'ignored_formula_modules.json',edited.ignored_formula_modules)
@@ -205,12 +223,15 @@ def render_saved_book(original,processing,mapping_directory,metadata,config,outp
         source=book['source'],usage=dict(requests=0,tokens=0,estimated_cost=0),
         statistics=dict(headings=len(book['sections']),processed_blocks=len(book['blocks']),
             named_special_blocks=sum(bool(t['name']) for t in book['targets'] if t['kind'] not in {'heading','figure','table'}),
-            styled_subheadings=len(edited.bold),formula_modules=sum(t['kind']=='formula' for t in edited.registry),
+            styled_subheadings=sum(t['kind']=='subheading' for t in edited.registry),formula_modules=sum(t['kind']=='formula' for t in edited.registry),
             ignored_legacy_formula_modules=sum(not m['method'].startswith('page_content_keywords_v') for m in edited.ignored_formula_modules),
             native_formula_special_blocks=sum(m['method'].startswith('page_content_keywords_v') for m in edited.ignored_formula_modules),
             examples=sum(t['kind']=='example' for t in edited.registry),linked_reference_hints=len(edited.linked_hints),
+            footnotes=len(edited.footnotes), matched_footnotes=sum(n['status']=='matched' for n in edited.footnotes),
+            unmatched_footnotes=sum(n['status']=='unmatched' for n in edited.footnotes),
             ambiguous_or_unmatched_hints=len(edited.unlinked),asset_float_groups=sum(r['method']=='deferred_asset_float' for r in coverage['source_order_layout'])),
-        heading_layout=settings,compilation=compilation)
+        heading_layout=settings,compilation=compilation,block_colors=config.get('block_colors',{}),
+        typography=config.get('typography'))
     if compilation['success']:
         progress('编译完成',1,1)
         audit=audit_pdf(project/'main.pdf',coverage,edited.registry)
@@ -233,9 +254,10 @@ def write_render_report(output,result):
     lines=['# 三阶段结果的 LaTeX 排版报告','',
            '**本次排版 DeepSeek 调用 0 次，API 费用 0。** 直接复用保存的标题、类型删除、合并和本地编号映射结果。','',
            f"状态：{result['status']}。标题 {s['headings']} 个，处理块 {s['processed_blocks']} 个；加粗小标题 {s['styled_subheadings']} 个，公式颜色框 {s['formula_modules']} 个，例题 {s['examples']} 个。",'',
-           '一级标题独占居中标题页；二级标题另起一页；三级及以下不强制换页。定义用绿色块，定理/命题/引理/推论用橙色块，算法用青色块；例题使用黑色分隔线，小标题加粗。独立公式按普通数学公式排版，不添加颜色框。','',
+           ('一级标题独占居中标题页；二级标题另起一页；三级及以下不强制换页。特殊块使用用户指定的类型配色，具体设置见 render_result.json 的 block_colors。小标题加粗，独立公式使用原生数学排版。' if result.get('block_colors') else
+            '一级标题独占居中标题页；二级标题另起一页；三级及以下不强制换页。定义用绿色块，定理/命题/引理/推论用橙色块，算法用青色块；例题使用黑色分隔线，小标题加粗。独立公式按普通数学公式排版，不添加颜色框。'),'',
            f"原文明示名称 {s.get('named_special_blocks',0)} 个进入对象登记记录；特殊块标题显示原文的类型、编号和名称，保留原有括号、引号等符号。名称不重复出现在框内正文开头；无明确名称时不添加名称。",'',
-           (f"新第二步提取的 {s.get('native_formula_special_blocks',0)} 个公式特殊块保留识别与来源记录，排版使用原生公式，不添加颜色框。文字与公式没有 OCR 纠错；没有额外识别小标题。" if current else
+           (f"第二步提取的 {s.get('native_formula_special_blocks',0)} 个公式特殊块保留识别与来源记录，排版使用原生公式，不添加颜色框。文字与公式没有 OCR 纠错；编号小标题蓝色加粗，字号大于正文；例题题目用楷体、解答用仿宋。" if current else
             f"旧 DeepSeek 结果中的 {s['ignored_legacy_formula_modules']} 个公式特殊块不再单独着色；公式原文、保存的纠错、编号与引用跳转保留。[原生公式样式记录](reports/ignored_formula_modules.json)"),'',
            f"唯一候选引用提示 {s['linked_reference_hints']} 条生成跳转；多候选、未命中或同一片段目标冲突 {s['ambiguous_or_unmatched_hints']} 条保留原文，不任选目标。名称与例题编号不参与映射。",'',
            '[未生成跳转的引用提示](reports/unlinked_reference_hints.json)','',

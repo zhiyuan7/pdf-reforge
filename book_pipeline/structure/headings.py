@@ -19,6 +19,11 @@ def load_metadata(pdf, path=None):
         value = yaml.safe_load(path.read_text(encoding="utf-8"))
     except yaml.YAMLError as error:
         raise ValueError(f"Invalid metadata YAML: {path}: {error}") from error
+    return validate_metadata(value, path)
+
+
+def validate_metadata(value, path="user input"):
+    """Apply the same metadata contract to a form and a YAML file."""
     if not isinstance(value, dict) or set(value) - {"book", "exclude_pages", "heading_rules", "heading_layout", "overrides"}:
         raise ValueError("Metadata YAML needs book, optional exclude_pages, heading_rules, heading_layout and overrides only")
     book = value.get("book")

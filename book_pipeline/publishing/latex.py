@@ -14,6 +14,9 @@ from book_pipeline.ingestion.source import corrected_content
 from book_pipeline.ingestion.math_syntax import math_compatibility, formula_tags
 from book_pipeline.structure.paragraphs import supported_joins
 from book_pipeline.structure.heading_layout import HeadingLayout
+from book_pipeline.publishing.colors import COLOR_KINDS, color_definitions, selected_color, validate_colors
+from book_pipeline.publishing.figure_recovery import recover_fragmented_figures
+from book_pipeline.publishing.typography import validate_typography, subheading_size, trim_title_punctuation
 
 ESCAPES = {"\\": r"\textbackslash{}", "&": r"\&", "%": r"\%", "$": r"\$", "#": r"\#", "_": r"\_", "{": r"\{", "}": r"\}", "~": r"\textasciitilde{}", "^": r"\textasciicircum{}"}
 
@@ -47,7 +50,7 @@ def unicode_symbol(char, math=False):
     cjk_math = math and (0x2E80 <= code <= 0x9FFF or 0xF900 <= code <= 0xFAFF
                         or 0xFF01 <= code <= 0xFF60 or 0x20000 <= code <= 0x3134F)
     if (0x2460 <= code <= 0x24FF or 0x400 <= code <= 0x52F or 0x2160 <= code <= 0x2188
-            or char in "∞☉↗↘∼" or cjk_math):
+            or char in "∞☉↗↘∼≡′—" or cjk_math):
         glyph = r'{\BookUnicodeFont\char"' + f"{ord(char):X}" + "}"
         return r"\mbox{" + glyph + "}" if math else glyph
     return None
@@ -168,6 +171,7 @@ class Renderer:
         self.index, self.decisions, self.registry = index, decisions, registry
         self.directory = Path(directory)
         self.config = config or {}
+        self.typography = validate_typography(self.config.get('typography'))
         self.heading_layout = HeadingLayout([o for o in registry if o['kind'] in HEADINGS], heading_layout)
         self.refs = defaultdict(list)
         self.corrections = defaultdict(list)
@@ -191,8 +195,36 @@ class Renderer:
                 self.refs[r["atom"]].append(r)
         self.assets, self.ledger, self.link_targets, self.anchors = {}, [], [], []
         self.source_anchors = {}
+        edited_atoms = {atom for atom, rows in self.corrections.items() if rows} | {atom for atom, rows in self.refs.items() if rows}
+        self.recovered_figures = recover_fragmented_figures(index, registry, self.directory, edited_atoms)
+        self.figure_labels = {label for figure in self.recovered_figures.values() for label in figure['labels']}
+        for atom, figure in self.recovered_figures.items():
+            self.source_order_layout.append({'atom': atom, 'method': 'fragmented_diagram_preserved_from_source_page', **figure})
         self.bold_spans=[index.span(s) for s in decisions.get('bold_spans',[])]
         self.toc_position = min((e["lo"] for e in decisions["exclusions"] if "original_toc" in e.get("reasons", [e["reason"]])), default=None)
+        self.page_footnotes = decisions.get('page_footnotes', [])
+        self.rendered_footnotes = []
+        self.footnote_bodies = {}
+
+    def page_footnote_body(self, note):
+        if note['id'] in self.footnote_bodies:
+            return self.footnote_bodies[note['id']]
+        chunks, previous = [], None
+        for atom, a, z in self.index.fragments(note['lo'], note['hi']):
+            if previous is not None and previous['group'] != atom['group']:
+                chunks.append('\\par\n')
+            chunks.append(self.fragment(atom, a, z, False))
+            previous = atom
+        body = ''.join(chunks)
+        self.footnote_bodies[note['id']] = body
+        return body
+
+    def page_footnote_tex(self, note):
+        """Retain original labels and native inline mathematics, exactly once."""
+        body = self.page_footnote_body(note)
+        self.anchors.append(note['anchor'])
+        self.rendered_footnotes.append({k:note[k] for k in ('id','anchor','reference_anchor','status','page','reason')})
+        return '\\BookPageFootnote{' + note['anchor'] + '}{' + body + '}\n'
 
     def asset(self, atom):
         source = Path(atom["asset"])
@@ -210,8 +242,10 @@ class Renderer:
             if lo <= c["start_offset"] and c["end_offset"] <= hi:
                 changes.append((c["start_offset"], c["end_offset"], escape(c["replacement"])))
         for r in self.refs[atom["id"]]:
-            if lo <= r["start_offset"] and r["end_offset"] <= hi:
-                changes.append((r["start_offset"], r["end_offset"], "\\BookLink{" + r["target"] + "}{" + escape(r["text"]) + "}"))
+            start, end = max(lo, r['start_offset']), min(hi, r['end_offset'])
+            if start < end:
+                text = r['text'] if (start,end)==(r['start_offset'],r['end_offset']) else atom['content'][start:end]
+                changes.append((start, end, "\\BookLink{" + r["target"] + "}{" + escape(text) + "}"))
                 self.link_targets.append(r["target"])
         chunks, cursor = [], lo
         for start, end, replacement in sorted(changes):
@@ -232,6 +266,8 @@ class Renderer:
         return self.source_marker(atom) + value
 
     def source_marker(self, atom):
+        if atom['id'] in self.figure_labels:
+            return ''  # These destinations are emitted inside the complete source figure.
         if atom["id"] not in self.source_anchors:
             name = "source-" + atom["id"]
             self.source_anchors[atom["id"]] = name
@@ -239,6 +275,8 @@ class Renderer:
         return ""
 
     def content_fragment(self, atom, lo, hi, in_box):
+        if atom['id'] in self.figure_labels:
+            return ''
         if atom["kind"] == "text":
             return self.text_fragment(atom, lo, hi)
         content = atom["content"]
@@ -254,6 +292,22 @@ class Renderer:
         if atom["kind"] == "display_math":
             tex = math_tex(content)
             tags = formula_tags(tex)
+            image_reason = 'multiple equation tags' if len(tags) > 1 else None
+            if len(re.findall(r'\\tag\*?\s*\{', tex)) != len(tags):
+                image_reason = 'unbalanced equation tag delimiters'
+            if len(tags) == 1 and re.search(r'(?<!\\)[_^]', tags[0]['tex']) and not any(
+                    delimiter in tags[0]['tex'] for delimiter in ('$', r'\ensuremath', r'\(')):
+                image_reason = 'math-only syntax in a text-mode equation tag'
+            if image_reason:
+                # OCR can mistake a left-hand item label for a second equation
+                # number, or duplicate part of the right-hand number. Neither
+                # label can safely be discarded without inspecting the source.
+                if not atom.get('asset'):
+                    raise ValueError('Formula has ' + image_reason + ' but no source image: ' + atom['id'])
+                rendered = self.image_tex(atom)
+                self.tex_compatibility.append({'atom': atom['id'], 'original': content, 'rendered': rendered,
+                    'evidence': [image_reason + ' preserved using the original formula image; no label or mathematical content discarded']})
+                return "\n% source-atom: " + atom['id'] + rendered + "% end-source-atom: " + atom['id'] + "\n"
             # Keep the original equation number outside the measured math
             # box. Only oversized expressions are reduced to fit the column.
             if len(tags) <= 1:
@@ -275,6 +329,14 @@ class Renderer:
         raise ValueError("Unsupported atom kind: " + atom["kind"])
 
     def image_tex(self, atom):
+        markers = ''
+        if atom['id'] in self.recovered_figures:
+            figure = self.recovered_figures[atom['id']]
+            for label in figure['labels']:
+                name = 'source-' + label
+                self.source_anchors[label] = name
+                markers += '\\hypertarget{' + name + '}{}'
+            atom = {**atom, 'asset': figure['asset'], 'bbox': figure['bbox']}
         bbox = atom.get("bbox")
         # MinerU coordinates are normalized against the original page. Estimate
         # the original text column from body blocks, then retain image scale.
@@ -282,17 +344,47 @@ class Renderer:
                 and a["kind"] == "text" and a["block_type"] == "text" and a.get("bbox")]
         column_width = max((b[2] for b in body), default=.88) - min((b[0] for b in body), default=.12)
         width = min(1., max(.15, (bbox[2] - bbox[0]) / max(.25, column_width))) if bbox else 1.
-        return "\n\\BookImage[" + f"{width:.3f}" + "\\linewidth]{" + self.asset(atom) + "}\n"
+        return "\n" + markers + "\\BookImage[" + f"{width:.3f}" + "\\linewidth]{" + self.asset(atom) + "}\n"
 
     def anchor(self, name):
         self.anchors.append(name)
         return "\\BookAnchor{" + name + "}"
 
+    def object_title(self, item):
+        end = self.index.position(item['body_start'])
+        parts = list(self.index.fragments(item['lo'], end))
+        if item['kind'] in COLOR_KINDS:
+            # Trim raw text before escaping TeX. Math atoms, paired name marks
+            # and source spans remain intact, including punctuation-only atoms.
+            for n in range(len(parts) - 1, -1, -1):
+                atom, lo, hi = parts[n]
+                if atom['kind'] != 'text':
+                    break
+                text = trim_title_punctuation(atom['content'][lo:hi])
+                parts[n] = atom, lo, lo + len(text)
+                if text:
+                    break
+        return ''.join(self.fragment(atom, lo, hi, False) for atom, lo, hi in parts)
+
     def render(self):
         total = self.index.prefix[-1]
         positions = {0, total, *self.index.prefix}
+        questions, answers = [], []
+        for item in self.registry:
+            if item['kind'] != 'example':
+                continue
+            for field, spans in (('question_ranges', questions), ('answer_ranges', answers)):
+                for r in item.get(field, []):
+                    a, z = max(item['lo'], r['lo']), min(item['hi'], r['hi'])
+                    if a < z:
+                        spans.append((a, z)); positions.update((a, z))
         for lo,hi in self.bold_spans:positions.update((lo,hi))
         starts, ends, anchored, skipped = defaultdict(list), defaultdict(list), defaultdict(list), []
+        note_insertions = defaultdict(list)
+        for note in self.page_footnotes:
+            positions.update((note['lo'], note['hi'], note['insert_after']))
+            skipped.append((note['lo'], note['hi'], 'page_footnote_rendered_separately'))
+            note_insertions[note['insert_after']].append(note)
         associated_captions={}
         relocated_labels=defaultdict(list)
         for o in self.registry:
@@ -333,6 +425,7 @@ class Renderer:
         last_atom = None
         caption_open = None
         footnote_previous = {}
+        pending_notes = []
         headings = sorted((o for o in self.registry if o["kind"] in HEADINGS), key=lambda o: o["lo"])
         from book_pipeline.structure.pagination import HeadingPagination
         pagination = HeadingPagination(headings, layout=self.heading_layout)
@@ -347,7 +440,27 @@ class Renderer:
                 previous = following
             if count > 1:
                 heading_space[first["lo"]] = 5 * count + 3
-        environments = {"definition": "BookDefinition", "notation": "BookDefinition", "theorem": "BookTheorem", "lemma": "BookTheorem", "corollary": "BookTheorem", "proposition": "BookTheorem", "algorithm": "BookAlgorithm", "example": "BookExample", "remark": "BookRemark", "numbered": "BookRemark", "proof": "BookProof", "solution": "BookSolution", "exercise": "BookExercise", "footnote": "BookFootnote", "bibliography_entry": "BookBibliography"}
+        environments = {"definition": "BookDefinition", "notation": "BookDefinition", "theorem": "BookTheorem", "lemma": "BookTheorem", "corollary": "BookTheorem", "proposition": "BookTheorem", "algorithm": "BookAlgorithm", "example": "BookExample", "remark": "BookRemark", "numbered": "BookRemark", "proof": "BookProof", "solution": "BookSolution", "exercise": "BookExercise", "footnote": "BookFootnote", "bibliography_entry": "BookBibliography", "subheading": "BookSubheading", "body": "BookBodySample"}
+        colors = validate_colors(self.config.get('block_colors', {}))
+        boxed_notes = defaultdict(list)
+        for note in self.page_footnotes:
+            if note['status'] != 'matched':continue
+            parents = [o for o in self.registry if o['kind'] in COLOR_KINDS and
+                       o['lo'] <= note['reference']['edited_lo'] < o['hi']]
+            if parents:
+                boxed_notes[min(parents, key=lambda o:o['lo'])['anchor']].append(note)
+        page_breaks = set(self.config.get('page_break_before_anchors', []))
+        def environment(item):
+            return 'BookColoredBlock' if item['kind'] != 'example' and selected_color(colors, item) else environments[item['kind']]
+        def opening(item, title):
+            if item['kind'] == 'subheading':
+                return '\n\\begin{BookSubheading}{' + f"{subheading_size(self.typography, item):g}" + '}\n'
+            color = selected_color(colors, item)
+            extra = '{BookColor' + color[1:] + '}' if color and item['kind'] != 'example' else ''
+            notes = boxed_notes.get(item['anchor'], [])
+            reserve = '\n\\BookFootnoteBoxReserve{' + '\\par\n'.join(self.page_footnote_body(n) for n in notes) + '}\n' if notes else ''
+            options = '[lines before break=100,shrink break goal=\\BookFootnoteReserve]' if notes else ''
+            return reserve + '\n\\begin{' + environment(item) + '}' + options + '{' + title + '}' + extra + '\n'
         join_pairs = self.join_pairs
         group_limits = {}
         group_atoms = defaultdict(list)
@@ -405,6 +518,17 @@ class Renderer:
             if caption_open is not None:current.append('\\par\\endgroup\n');caption_open=None
             current.append('\n\\end{'+floating_open[2]+'}\n')
             floating_open=None;pending_reopen=bool(stack);last_atom=None
+        def insert_notes(position):
+            for note in note_insertions.pop(position, []):
+                if note['status'] == 'matched':
+                    current.append(self.anchor(note['reference_anchor']))
+                pending_notes.append(note)
+            # tcolorbox uses minipage footnotes. Emit the page insertion outside
+            # captured boxes so it cannot be swallowed or rendered inside them.
+            if not stack and floating_open is None:
+                for note in pending_notes:
+                    current.append(self.page_footnote_tex(note))
+                pending_notes.clear()
         for lo, hi in zip(ordered, ordered[1:]):
             if floating_open and lo==floating_open[1]:close_float()
             if caption_open is not None and (starts[lo] or ends[lo] or lo == self.toc_position):
@@ -418,15 +542,19 @@ class Renderer:
                 if not stack or stack[-1]["anchor"] != o["anchor"]:
                     raise ValueError("Unbalanced semantic environments")
                 stack.pop()
-                if not pending_reopen:current.append("\n\\end{" + environments[o["kind"]] + "}\n")
+                if not pending_reopen:current.append("\n\\end{" + environment(o) + "}\n")
                 if o["kind"] == "footnote":
                     last_atom = footnote_previous.pop(o["anchor"], None)
+            insert_notes(lo)
             if pending_reopen:
                 for parent in stack:
                     continuation='（例题续）' if parent['kind']=='example' else '（续）'
-                    current.append('\n\\begin{'+environments[parent['kind']]+'}{'+continuation+'}\n')
+                    current.append(opening(parent, continuation))
                 pending_reopen=False
             for o in sorted(starts[lo], key=lambda o: -o["hi"]):
+                if o['anchor'] in page_breaks:
+                    current.append('\n\\par\\clearpage\n')
+                    last_atom = None
                 if o["kind"] in HEADINGS:
                     force_start=self.heading_layout.level(o) in self.config.get('start_page_levels',[])
                     current.append('\n\\par\\clearpage\n' if force_start else pagination.before(o))
@@ -472,13 +600,13 @@ class Renderer:
                         footnote_previous[o["anchor"]] = last_atom
                         last_atom = None
                     if o.get("body_start") and self.index.position(o["body_start"]) > o["lo"]:
-                        title = "".join(self.fragment(a, l, h, False) for a, l, h in self.index.fragments(o["lo"], self.index.position(o["body_start"])))
+                        title = self.object_title(o)
                     else:
                         # Without a separately confirmed title span the original
                         # label remains in the body. Adding a generated label
                         # would repeat "例2.1", "解", or "证明" in the PDF.
                         title = ""
-                    current.append("\n" + self.anchor(o["anchor"]) + "\\begin{" + environments[o["kind"]] + "}{" + title + "}\n")
+                    current.append("\n" + self.anchor(o["anchor"]) + opening(o, title))
                     stack.append(o)
             for o in relocated_labels[lo]:
                 shown=''.join(self.source_marker(a)+self.content_fragment(a,l,h,False)
@@ -488,7 +616,7 @@ class Renderer:
             group=self.index.atoms[self.index.ids[self.index.address(lo)['atom']]]['group']
             if group in floating_groups and lo==floating_groups[group][0]:
                 if caption_open is not None:current.append('\\par\\endgroup\n');caption_open=None
-                for parent in reversed(stack):current.append('\n\\end{'+environments[parent['kind']]+'}\n')
+                for parent in reversed(stack):current.append('\n\\end{'+environment(parent)+'}\n')
                 floating_open=floating_groups[group]
                 current.append('\n\\par\\begin{'+floating_open[2]+'}[htp]\n\\centering\n')
                 self.source_order_layout.append({'group':group,'method':'deferred_asset_float','placement':'htp',
@@ -535,6 +663,10 @@ class Renderer:
                     caption=''.join(self.fragment(a,l,h,False) for a,l,h in self.index.fragments(cap[0],cap[1]))
                     current.append('\n\\BookCaption{'+caption+'}\n')
                 value = self.fragment(atom, start, end, bool(stack))
+                if any(a <= lo and hi <= z for a, z in answers):
+                    value = '{\\BookExampleAnswerFont ' + value + '}'
+                elif any(a <= lo and hi <= z for a, z in questions):
+                    value = '{\\BookExampleQuestionFont ' + value + '}'
                 if cap and cap[2]=='figure':
                     caption=''.join(self.fragment(a,l,h,False) for a,l,h in self.index.fragments(cap[0],cap[1]))
                     value+='\n\\BookCaption{'+caption+'}\n'
@@ -572,7 +704,10 @@ class Renderer:
                 if not stack or stack[-1]["anchor"] != o["anchor"]:
                     raise ValueError("Unbalanced final environments")
                 stack.pop()
-                if not pending_reopen:current.append("\n\\end{" + environments[o["kind"]] + "}\n")
+                if not pending_reopen:current.append("\n\\end{" + environment(o) + "}\n")
+        insert_notes(total)
+        if pending_notes or note_insertions:
+            raise ValueError('A page footnote was not rendered')
         if stack:
             raise ValueError("Unclosed semantic environment")
         if current:
@@ -584,7 +719,7 @@ class Renderer:
         return chapters
 
 
-def write_project(index, decisions, registry, references, metadata, config, directory, *, heading_layout=None):
+def write_project(index, decisions, registry, references, metadata, config, directory, *, heading_layout=None, sample_mode=False):
     directory = Path(directory)
     directory.mkdir(parents=True, exist_ok=True)
     for name in ("elegantbook.cls", "book-style.sty", "PROVENANCE.md"):
@@ -611,23 +746,35 @@ def write_project(index, decisions, registry, references, metadata, config, dire
     if license_file.is_file():
         shutil.copy2(license_file, directory / "fonts/OFL.txt")
     title, author = metadata.get("title") or "技术书籍", metadata.get("author") or ""
+    typography = renderer.typography
+    body = typography['body_size']
     preamble = "\n".join([
         # BookFootnote uses original labels and explicit destinations. There
         # is no automatic footnotemark for hyperref to pair with footnotetext.
         r"\PassOptionsToPackage{hyperfootnotes=false}{hyperref}",
         r"\documentclass[lang=cn,chinesefont=nofont,10pt,twoside,openany,math=newtx]{elegantbook}",
         "\\setCJKmainfont{" + escape(config["main_font"]) + "}",
-        "\\setCJKsansfont{" + escape(config["heading_font"]) + "}",
-        "\\setCJKfamilyfont{zhhei}{" + escape(config["heading_font"]) + "}",
+        "\\setCJKsansfont[Scale=1,AutoFakeBold=2]{" + escape(config["heading_font"]) + "}",
+        "\\setCJKfamilyfont{zhhei}[Scale=1,AutoFakeBold=2]{" + escape(config["heading_font"]) + "}",
+        r"\newfontfamily\BookSubheadingLatinFont[Scale=1,Extension=.otf,UprightFont=*-regular,BoldFont=*-bold,ItalicFont=*-italic,BoldItalicFont=*-bolditalic]{texgyreheros}",
         r"\providecommand{\heiti}{\CJKfamily{zhhei}}",
         r"\newCJKfontfamily\BookCaptionFont[Path=fonts/,AutoFakeBold=2]{caption.ttf}",
         r"\newfontfamily\BookUnicodeFont[Path=fonts/,AutoFakeBold=2]{caption.ttf}",
+        r"\newCJKfontfamily\BookExampleAnswerCJKFont[Scale=1]{FandolFang-Regular.otf}",
         r"\usepackage{book-style}",
+        color_definitions(validate_colors(config.get('block_colors', {}))),
+        r'\colorlet{BookExampleInk}{BookColor' + validate_colors(config['block_colors'])['example'][1:] + '}' if config.get('block_colors', {}).get('example') else '',
+        r'\renewcommand{\BookExampleQuestionFont}{\BookCaptionFont}',
+        r'\renewcommand{\BookExampleAnswerFont}{\normalfont\rmfamily\BookExampleAnswerCJKFont}',
+        r'\AtBeginDocument{\fontsize{' + f'{body:g}' + 'pt}{' + f'{body * 1.56:g}' + r'pt}\selectfont}',
+        r'\renewcommand{\BookFootnoteFont}{\normalfont\BookCaptionFont\fontsize{' + f'{body*.8:g}' + 'pt}{' + f'{body*1.12:g}' + r'pt}\selectfont}',
         renderer.heading_layout.tex_setup(),
         r"\pdfstringdefDisableCommands{\def\hypertarget#1#2{#2}\def\BookHeadingGap{ }}",
         "\\renewcommand{\\BookFooter}{" + escape(title + ("　" + author if author else "")) + "}",
         "\\hypersetup{pdftitle={" + escape(title) + "},pdfauthor={" + escape(author) + "}}",
-        r"\begin{document}", r"\frontmatter", r"\tableofcontents" if renderer.toc_position is None else "", "\n".join(inputs), r"\end{document}", ""])
+        r"\begin{document}", r"\pagestyle{empty}" if sample_mode else r"\frontmatter",
+        r"\tableofcontents" if not sample_mode and renderer.toc_position is None else "",
+        "\n".join(inputs), r"\end{document}", ""])
     (directory / "main.tex").write_text(preamble, encoding="utf-8")
     (directory / "README.md").write_text("# 编译\n\n安装 XeLaTeX、latexmk、Noto Serif/Sans CJK SC 后，在本目录运行：\n\n```bash\nlatexmk -xelatex -interaction=nonstopmode -halt-on-error -no-shell-escape main.tex\n```\n\n模板固定于 ElegantBook v4.7；中文楷体字体与授权随工程提供。结构与疑点报告位于上一级 reports/。\n", encoding="utf-8")
     audit = {"source_units": index.prefix[-1], "accounted_units": sum(v["end"] - v["start"] for v in renderer.ledger),
@@ -640,5 +787,6 @@ def write_project(index, decisions, registry, references, metadata, config, dire
                                  for o in registry if o['kind'] in HEADINGS],
              "link_targets": renderer.link_targets, "assets": renderer.assets, "issues": renderer.issues,
              "tex_compatibility":renderer.tex_compatibility,"source_order_layout":renderer.source_order_layout}
+    audit['footnotes'] = renderer.rendered_footnotes
     save(directory.parent / "reports/coverage.json", audit)
     return audit

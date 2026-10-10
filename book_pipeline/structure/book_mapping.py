@@ -5,7 +5,81 @@ from pathlib import Path
 import re
 from book_pipeline.config import fingerprint, read
 from book_pipeline.ingestion.math_syntax import formula_tags
-from book_pipeline.structure.section_review import render_parts
+from book_pipeline.structure.section_review import materialize, render_parts
+from book_pipeline.structure.keyword_matching import MINIMUM_OCCURRENCES, validate_candidates
+from book_pipeline.structure.subheading_patterns import canonical_pattern, expand_letter_patterns, first_prefix_pattern, pattern_depth
+from book_pipeline.structure.page_content import recover_continuous_subheadings, saved_subheading_candidates
+
+REMOVED_BLOCKS_FILE = 'removed_special_blocks.json'
+SPECIAL_BLOCK_POLICY = 'saved_keywords_numbering_continuity_footnotes_v5'
+
+
+def special_block_key(section, module):
+    """Identify the declaration even if a later judgment changes its extent."""
+    return fingerprint(dict(section=section, declaration_lo=module['lo']))
+
+
+def removed_special_blocks(directory):
+    return removed_special_rules(directory).get('blocks', [])
+
+
+def removed_special_rules(directory):
+    path = Path(directory) / REMOVED_BLOCKS_FILE
+    return read(path) if path.is_file() else dict(blocks=[], types=[])
+
+
+def special_block_type(module):
+    kind = 'remark' if module['type'] == 'other' else module['type']
+    if kind != 'subheading':
+        return kind, None
+    pattern = module.get('subheading_pattern') or module.get('keyword')
+    if not pattern_depth(pattern):
+        depth = max(1, min(6, len(str(module.get('number', '')).rstrip('.').split('.'))))
+        pattern = '数字.' if depth == 1 else '.'.join(['数字'] * depth)
+    return kind, canonical_pattern(pattern)
+
+
+def classified_modules(index, units, plan, report, directory):
+    """Reclassify saved confirmations without repeating model judgments."""
+    groups = {sid: list(processed['modules']) for sid, processed in units.items()}
+    # A formerly rare form can join a now-corrected letter class. Recover only
+    # confirmations rejected by the frequency gate, never overlaps. Model
+    # rejections are handled separately by the anchored continuity review.
+    audit = directory / 'special_block_results.json'
+    identities = {(sid, special_block_key(sid, m)) for sid, modules in groups.items() for m in modules}
+    sections = {r['section']['id']: r for r in report['sections']}
+    judgments = read(audit) if audit.is_file() else []
+    if judgments:
+        for row in judgments:
+            module, sid = row.get('module'), row.get('section')
+            if module and sid in groups and module['type'] == 'subheading' and row.get('discard_reason') == 'confirmed_keyword_count_at_most_10':
+                key = (sid, special_block_key(sid, module))
+                if key not in identities:
+                    section = sections[sid]
+                    restored = materialize(index, section['section'], [],
+                                           {**section['resolved'], 'm': [], 's': [module]})['modules'][0]
+                    groups[sid].append(restored)
+                    identities.add(key)
+    patterns = validate_candidates(report.get('keyword_discovery', {}).get('candidates'))['subheadings']
+    for sid, modules in groups.items():
+        for n, module in enumerate(modules):
+            previous = module.get('subheading_pattern') or module.get('keyword')
+            if module['type'] != 'subheading' or not module.get('keyword') or not pattern_depth(previous):
+                continue
+            pattern = first_prefix_pattern(module['label'], patterns)
+            groups[sid][n] = {**module, 'keyword': pattern or module['keyword'],
+                              'subheading_pattern': pattern or previous,
+                              '_original_subheading_pattern': previous,
+                              '_unmatched_pattern': pattern is None}
+    candidates = saved_subheading_candidates(index, plan, report, directory, judgments)
+    recovered = recover_continuous_subheadings(index, candidates, judgments, groups, {})
+    for restored in recovered:
+        sid = restored['section']
+        module = {k: v for k, v in restored.items() if k not in {'section', 'b'}}
+        section = sections[sid]
+        groups[sid].extend(materialize(index, section['section'], [],
+                                      {**section['resolved'], 'm': [], 's': [module]})['modules'])
+    return groups
 
 def occurrences(text,quote):
     return [m.start() for m in re.finditer(re.escape(quote),text)] if quote else []
@@ -72,6 +146,10 @@ def source_for_quote(pieces,lo,hi):
 def build_book(index,plan,report,directory):
     """Registry includes every heading and every retained figure/table body."""
     directory=Path(directory)
+    rules = removed_special_rules(directory)
+    removed = {item['key'] for item in rules.get('blocks', [])}
+    disabled_types = {(item['kind'], pattern) for item in rules.get('types', [])
+                      for pattern in (expand_letter_patterns([item['pattern']]) if item.get('pattern') else [None])}
     rows=report['sections'];headings=[r['section']['heading'] for r in rows]
     by_heading={h['toc_id']:h for h in headings}
     def context(h):
@@ -83,7 +161,8 @@ def build_book(index,plan,report,directory):
         section=next((x for x in reversed(chain) if x['kind']=='section'),None)
         return {'chapter':chapter['toc_id'] if chapter else None,'chapter_number':chapter['number'] if chapter else '',
                 'section':section['toc_id'] if section else None,'section_number':section['number'] if section else '',
-                'heading':h['toc_id'],'heading_title':h['title']}
+                'heading':h['toc_id'],'heading_title':h['title'],
+                'exercise_context':h.get('exercise_context',False),'exercise_root':h.get('exercise_root')}
     atlas=[];units={};registry=[]
     for row in rows:
         sid=row['section']['id'];h=row['section']['heading'];scope=context(h)
@@ -91,21 +170,49 @@ def build_book(index,plan,report,directory):
         for unit in processed['units']:
             text,pieces=source_pieces(index,unit,row['resolved']['c'])
             atlas.append({'b':unit['blocks'][0],'source_blocks':unit['blocks'],'section':sid,'page':unit['page'],
-                          'text':text,'pieces':pieces,'parts':unit['parts'],'context':scope,'declarations':[]})
+                          'text':text,'pieces':pieces,'parts':unit['parts'],'context':scope,'declarations':[],
+                          'content_role':unit.get('content_role', 'body')})
         lo,hi=index.span(h)
         registry.append({'id':'H'+sid.removeprefix('toc-'),'kind':'heading','heading_kind':h['kind'],
                          'number':h['number'],'name':h['title'],'label':index.text(lo,hi),'lo':lo,'hi':hi,
                          'page':index.page_for(lo)+1,'context':scope,'body_preview':'','origin':'matched_toc_heading'})
-    target_count=0
+    modules_by_section = classified_modules(index, units, plan, report, directory)
+    # Keep existing object ids stable; rescued confirmations receive new ids.
+    ordinals = {}
+    for source in (units, {sid: {'modules': modules} for sid, modules in modules_by_section.items()}):
+        for row in rows:
+            sid = row['section']['id']
+            for module in source[sid]['modules']:
+                if module['type'] == 'formula' or (module['type'] == 'subheading' and row['section'].get('exercise_context')):
+                    continue
+                key = (sid, special_block_key(sid, module))
+                if key not in ordinals:
+                    ordinals[key] = len(ordinals) + 1
+    # Saved v7 and earlier books may predate the final count gate. Apply it
+    # to saved confirmations and continuity restorations before cancellations, so
+    # previewing/rendering an old book cannot resurrect a rare keyword.
+    keyword_counts = Counter(m['keyword'] for modules in modules_by_section.values() for m in modules
+                             if m.get('keyword') and not m.get('_unmatched_pattern'))
+    rare_keywords = {k for k, count in keyword_counts.items() if count <= MINIMUM_OCCURRENCES}
+    def retained(module):
+        old_type = ('subheading', module.get('_original_subheading_pattern'))
+        return (not module.get('_unmatched_pattern') and module.get('keyword') not in rare_keywords
+                and special_block_type(module) not in disabled_types and old_type not in disabled_types)
     for row in rows:
         sid=row['section']['id'];scope=context(row['section']['heading'])
-        for module in units[sid]['modules']:
+        for module in modules_by_section[sid]:
+            if module['type']=='subheading' and row['section'].get('exercise_context'):
+                continue
             if module['type']=='formula':continue # Index every tag below, including nested equations.
-            target_count+=1;body=module['body_resolved'] or module
-            registry.append({'id':f'O{target_count:05d}','kind':module['type'],'number':module['number'],
+            removal_key = special_block_key(sid, module)
+            if removal_key in removed or not retained(module):
+                continue
+            body=module['body_resolved'] or module
+            registry.append({'id':f'O{ordinals[sid, removal_key]:05d}','kind':module['type'],'number':module['number'],
                 'name':module['name'],'label':module['label'],'lo':module['lo'],'hi':module['hi'],
                 'declaration_lo':module['lo'],'declaration_hi':max(module.get('formal_label_end',module['lo']),body['lo']) if module['body_resolved'] else module['hi'],
-                **{k:module[k] for k in ('name_span','name_parts','name_source','name_method') if k in module},
+                **{k:module[k] for k in ('name_span','name_parts','name_source','name_method',
+                                       'subheading_pattern','subheading_continuity','question_ranges','answer_ranges') if k in module},
                 **({'selected_ranges':module['selected_ranges']} if 'selected_ranges' in module else {}),
                 'page':index.page_for(module['lo'])+1,'context':scope,
                 'body_preview':''.join(p['text'] for p in module['content_parts'])[:320],'origin':'deepseek_section_module'})
@@ -113,7 +220,7 @@ def build_book(index,plan,report,directory):
     equation_names={}
     for processed in units.values():
         for module in processed['modules']:
-            if module['type']!='formula' or not module.get('name'):continue
+            if module['type']!='formula' or not module.get('name') or not retained(module):continue
             tags=[(part['source_atom'],tag['number']) for part in module['content_parts']
                   if part['kind'] in {'math','display_math'} for tag in formula_tags(part['text'])]
             if len(tags)==1 and (not module['number'] or module['number']==tags[0][1]):
@@ -140,7 +247,7 @@ def build_book(index,plan,report,directory):
     # than a LaTeX tag. Preserve explicitly extracted formula objects as well.
     for sid,processed in units.items():
         for module in processed['modules']:
-            if module['type']!='formula':continue
+            if module['type']!='formula' or not retained(module):continue
             if any(t['kind']=='equation' and
                    module['lo']<=t['lo']<t['hi']<=module['hi'] for t in registry):continue
             formula_count+=1;scope=context(by_heading[sid])
@@ -212,7 +319,13 @@ def build_book(index,plan,report,directory):
         block['declarations'].extend(raw_tag_ranges(block['text']))
         block['declarations']=[list(x) for x in sorted(set(tuple(d) for d in block['declarations']))]
     return {'source':report['source'],'heading_sha256':plan['heading_sha256'],
-            'processed_sha256':fingerprint([r['resolved'] for r in rows]),'blocks':atlas,'targets':registry,
+            'footnotes':plan.get('footnotes', {}).get('items', []),
+            'processed_sha256':fingerprint(dict(resolved=[r['resolved'] for r in rows], removed=sorted(removed),
+                                               footnotes=plan.get('footnotes', {}),
+                                               disabled_types=sorted(disabled_types), rare_keywords=sorted(rare_keywords),
+                                               continuity=[(sid, m['lo'], m['hi']) for sid, modules in modules_by_section.items()
+                                                           for m in modules if m.get('subheading_continuity')])),
+            'blocks':atlas,'targets':registry,
             'sections':[{'id':r['section']['id'],'heading':r['section']['heading'],'context':context(r['section']['heading'])} for r in rows]}
 
 

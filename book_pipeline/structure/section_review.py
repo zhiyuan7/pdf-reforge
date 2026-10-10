@@ -108,12 +108,14 @@ def split_source(index, outline):
                          'blocks': [b['b'] for b in owned],
                          'text_characters': sum(len(b['text']) for b in owned),
                          'nonempty': any(b['text'].strip() for b in owned),
-                         'exercise_context': any(re.search(r'习题|练习|测试|试题', x['title']) for x in headings[:n+1]
-                             if x['toc_id'] == h['toc_id'] or x['toc_id'] in ancestors(h, headings))})
+                         'exercise_context': h.get('exercise_context', False),
+                         'exercise_root': h.get('exercise_root')})
     stamp = {k: index.source[k] for k in ('source_pdf', 'input_sha256', 'mineru_sha256', 'source_page_count')}
     return {'method': METHOD, 'source': stamp, 'metadata':deepcopy(outline.get('metadata',{})), 'heading_sha256': fingerprint(headings),
             'excluded_pages': sorted(excluded_pages), 'blocks': blocks,
             'split_groups': split_groups, 'sections': sections,
+            'toc_entries': deepcopy(outline.get('toc_entries',[])),
+            'exercise_heading_classification': deepcopy(outline.get('exercise_heading_classification',{})),
             'ignored_bold_candidates': len(outline.get('bold_spans', []))}
 
 
@@ -151,15 +153,17 @@ def materialize(index, section, blocks, edits):
                 parts.append({'kind': atom['kind'], 'text': value, 'source_atom': atom['id'],
                               'start_offset': start, 'end_offset': end})
         if parts:
-            units.append({'blocks': [block['b']], 'page': block['page'], 'parts': parts})
+            units.append({'blocks': [block['b']], 'page': block['page'], 'parts': parts,
+                          'content_role': block.get('content_role', 'body')})
     for merge in edits['m']:
         positions = [n for n, unit in enumerate(units) if unit['blocks'][0] in merge['blocks']]
-        if not positions or positions != list(range(positions[0], positions[-1]+1)):
+        intervening = [units[n] for n in range(positions[0], positions[-1]+1) if n not in positions] if positions else []
+        if not positions or any(u.get('content_role') != 'page_footnote' for u in intervening):
             raise ValueError('Validated merge is not contiguous after deletions')
         chosen = [units[n] for n in positions]
-        joined = {'blocks': merge['blocks'], 'page': chosen[0]['page'],
+        joined = {'blocks': merge['blocks'], 'page': chosen[0]['page'], 'content_role': 'body',
                   'parts': [p for unit in chosen for p in unit['parts']]}
-        units[positions[0]:positions[-1]+1] = [joined]
+        units[positions[0]:positions[-1]+1] = [joined, *intervening]
     modules=[]
     for item in edits['s']:
         target=item['body_resolved'] or item
@@ -192,6 +196,7 @@ def numbered_formula_registry(plan, rows):
     for row in rows:
         for bid in row['section']['blocks']:
             block=blocks[bid]
+            if block.get('content_role') == 'page_footnote':continue
             for part in block['parts']:
                 if part['kind'] not in {'math','display_math'}:continue
                 if any(part['lo']<d['hi'] and part['hi']>d['lo'] for d in row['resolved']['d']):continue

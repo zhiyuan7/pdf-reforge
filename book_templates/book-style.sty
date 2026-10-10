@@ -101,23 +101,41 @@
   bookgreen/.style={bookcommon,colframe=main,colback=main!5,colbacktitle=main},
   bookorange/.style={bookcommon,colframe=second,colback=second!5,colbacktitle=second},
   bookcyan/.style={bookcommon,colframe=third,colback=third!5,colbacktitle=third}}
-\newtcolorbox{BookDefinition}[1]{bookgreen,title={#1}}
-\newtcolorbox{BookTheorem}[1]{bookorange,title={#1}}
-\newtcolorbox{BookAlgorithm}[1]{bookcyan,title={#1}}
-\newtcolorbox{BookFormula}[1]{bookcyan,title={#1}}
-\newtcolorbox{BookExample}[1]{enhanced,breakable,colback=white,colframe=white,
+\newtcolorbox{BookDefinition}[2][]{bookgreen,title={#2},#1}
+\newtcolorbox{BookTheorem}[2][]{bookorange,title={#2},#1}
+\newtcolorbox{BookAlgorithm}[2][]{bookcyan,title={#2},#1}
+\newtcolorbox{BookFormula}[2][]{bookcyan,title={#2},#1}
+\newtcolorbox{BookColoredBlock}[3][]{bookcommon,title={#2},
+  colframe=#3,colback=#3!5,colbacktitle=#3,#1}
+\colorlet{BookExampleInk}{black}
+\providecommand{\BookExampleQuestionFont}{\normalfont}
+\providecommand{\BookExampleAnswerFont}{\normalfont\rmfamily}
+\providecommand{\BookSubheadingLatinFont}{\sffamily}
+\newenvironment{BookSubheading}[1]{\par\Needspace{4\baselineskip}\vspace{7pt}\begingroup
+ \color{structurecolor}\BookSubheadingLatinFont\heiti\bfseries\boldmath\fontsize{#1pt}{\dimexpr #1pt*14/10\relax}\selectfont\noindent}{\par\endgroup\vspace{4pt}}
+\newenvironment{BookBodySample}[1]{\par\normalfont}{\par}
+\newtcolorbox{BookExample}[2][]{enhanced,breakable,colback=white,colframe=white,
   boxrule=0pt,sharp corners,left=0pt,right=0pt,top=4pt,bottom=4pt,
-  borderline north={0.5pt}{0pt}{black},borderline south={2pt}{0pt}{black},
-  title={#1},coltitle=black,colbacktitle=white,fonttitle=\sffamily\heiti\bfseries,titlerule=0pt,
-  before skip=10pt,after skip=10pt,title after break={（例题续）}}
-\newtcolorbox{BookRemark}[1]{enhanced,breakable,colback=gray!10,colframe=gray!10,
+  borderline north={0.5pt}{0pt}{BookExampleInk},borderline south={2pt}{0pt}{BookExampleInk},
+  title={#2},coltitle=BookExampleInk,colbacktitle=white,fonttitle=\sffamily\heiti\bfseries,titlerule=0pt,
+  before skip=10pt,after skip=10pt,title after break={（例题续）},#1}
+\newtcolorbox{BookRemark}[2][]{enhanced,breakable,colback=gray!10,colframe=gray!10,
   boxrule=0pt,left=5pt,right=5pt,top=4pt,bottom=4pt,before skip=6pt,after skip=6pt,
-  before upper={\BookCaptionFont\if\relax\detokenize{#1}\relax\else\textbf{#1}\par\fi}}
+  before upper={\BookCaptionFont\if\relax\detokenize{#2}\relax\else\textbf{#2}\par\fi},#1}
 \newenvironment{BookProof}[1]{\par\noindent\textbf{\color{second}#1}\quad}{\par}
 \newenvironment{BookSolution}[1]{\par\noindent\textbf{#1}\quad}{\par}
 \newenvironment{BookExercise}[1]{\par\noindent\textbf{#1}\quad}{\par}
 \NewDocumentEnvironment{BookFootnote}{m+b}{\begingroup
  \renewcommand{\thefootnote}{}\footnotetext{\noindent #1#2}\endgroup}{}
+\providecommand{\BookFootnoteFont}{\normalfont\footnotesize}
+\newbox\BookFootnoteMeasure
+\newdimen\BookFootnoteReserve
+\NewDocumentCommand{\BookFootnoteBoxReserve}{+m}{%
+ \setbox\BookFootnoteMeasure=\vbox{\hsize=\textwidth\BookFootnoteFont\noindent #1\par}%
+ \BookFootnoteReserve=\dimexpr\ht\BookFootnoteMeasure+\dp\BookFootnoteMeasure+\skip\footins+\baselineskip\relax}
+\NewDocumentCommand{\BookPageFootnote}{m +m}{\begingroup
+ \renewcommand{\thefootnote}{}\renewcommand{\@makefntext}[1]{\noindent ##1}%
+ \footnotetext[0]{\BookFootnoteFont\hypertarget{#1}{}#2}\endgroup}
 \newenvironment{BookBibliography}[1]{\par\noindent\if\relax\detokenize{#1}\relax\else #1\quad\fi}{\par}
 \newcommand{\BookCaption}[1]{\par\begingroup\BookCaptionFont\centering\noindent #1\par\endgroup}
 \newcommand{\BookImage}[2][\linewidth]{\par\noindent\makebox[\linewidth][c]{\includegraphics[width=#1,height=0.65\textheight,keepaspectratio]{#2}}\par}

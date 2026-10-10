@@ -105,6 +105,8 @@ def load_config(path=None):
     if not isinstance(labels, dict) or any(not isinstance(label, str) or not label.strip() or
             not isinstance(kind, str) or kind not in BOX_KINDS for label, kind in labels.items()):
         raise ValueError("numbered_object_labels must map type names to supported box kinds")
+    from .structure.keyword_matching import validate_candidates
+    config['keyword_candidates'] = validate_candidates(config.get('keyword_candidates'), labels)
     return config
 
 
