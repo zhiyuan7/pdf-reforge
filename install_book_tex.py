@@ -38,6 +38,9 @@ def main():
         archive.unlink()
     tlmgr = next(tex.glob("bin/*/tlmgr")).absolute()
     subprocess.run([str(tlmgr), "option", "repository", args.repository], check=True)
+    # The package index can advance after the pinned TinyTeX release. tlmgr
+    # refuses package installation until its own manager matches that index.
+    subprocess.run([str(tlmgr), "update", "--self"], check=True)
     subprocess.run([str(tlmgr), "install", *PACKAGES], check=True)
     print("Installed local TeX: " + str(tlmgr.parent))
 

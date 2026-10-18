@@ -1,4 +1,4 @@
-"""Render the three saved stages directly, with no AI client or semantic pass."""
+"""Render saved stages, with image-based recovery of located formula errors."""
 from bisect import bisect_right
 from collections import Counter,defaultdict
 from copy import deepcopy
@@ -11,7 +11,7 @@ from book_pipeline.ingestion.source import SourceIndex
 from book_pipeline.structure.book_mapping import build_book, project_source
 from book_pipeline.structure.headings import source_heading_end
 from book_pipeline.publishing.latex import write_project
-from book_pipeline.publishing.compiler import compile_project
+from book_pipeline.publishing.formula_repair import compile_with_formula_recovery
 from book_pipeline.publishing.environment import doctor
 from book_pipeline.publishing.local_qa import LocalPDFReviewer
 from book_pipeline.publishing.navigation import NavigationBuilder
@@ -223,22 +223,32 @@ def render_saved_book(original,processing,mapping_directory,metadata,config,outp
     save(reports/'render_references.json',references)
     save(reports/'unlinked_reference_hints.json',edited.unlinked)
     save(reports/'ignored_formula_modules.json',edited.ignored_formula_modules)
-    coverage=write_project(edited.index,decisions,edited.registry,references,metadata['book'],native_config,project,heading_layout=settings)
-    coverage['saved_module_notes']=edited.notes
-    coverage['footnote_formula_deletions']=book.get('footnote_duplicate_formulas', [])
-    save(reports/'coverage.json',coverage)
-    progress('生成 LaTeX',1,1)
+    def generate(replacements):
+        decisions['formula_repairs'] = {k:v for k,v in replacements.items() if isinstance(v,str)}
+        decisions['table_repairs'] = {k:v for k,v in replacements.items() if isinstance(v,dict)}
+        coverage=write_project(edited.index,decisions,edited.registry,references,metadata['book'],native_config,project,heading_layout=settings)
+        coverage['saved_module_notes']=edited.notes
+        coverage['footnote_formula_deletions']=book.get('footnote_duplicate_formulas', [])
+        save(reports/'coverage.json',coverage)
+        progress('生成 LaTeX',1,1)
+        return coverage
     if (reports/'compilation.json').exists():
         history=reports/'compile_history';history.mkdir(exist_ok=True)
         attempt=len(list(history.glob('attempt-*.json')))+1
         save(history/f'attempt-{attempt:03d}.json',read(reports/'compilation.json'))
         for filename in ('main.log','compile-output.txt'):
             if (project/filename).exists():shutil.copy2(project/filename,history/f'attempt-{attempt:03d}-{filename}')
-    compilation=compile_project(project,tools,timeout=1200)
+    coverage,compilation,formula_repairs=compile_with_formula_recovery(
+        edited.index,native_config,project,reports,tools,generate,progress)
     save(reports/'compilation.json',compilation)
+    save(reports/'formula_repairs.json',formula_repairs)
     result=dict(method=METHOD,processing_method=report['method'],status='compiled' if compilation['success'] else 'compilation_failed',
         output=str(output),tex=str(project/'main.tex'),pdf=str(project/'main.pdf') if compilation['success'] else None,
-        source=book['source'],usage=dict(requests=0,tokens=0,estimated_cost=0),
+        source=book['source'],usage=formula_repairs['usage'],
+        formula_repairs=dict(status=formula_repairs['status'],repaired_atoms=formula_repairs['repaired_atoms'],
+                             report=str(reports/'formula_repairs.json')),
+        table_repairs=dict(status=formula_repairs['table_repairs']['status'],repaired_atoms=formula_repairs['table_repairs']['repaired_atoms'],
+                           report=str(reports/'table_repair/repairs.json')),
         statistics=dict(headings=len(book['sections']),processed_blocks=len(book['blocks']),
             named_special_blocks=sum(bool(t['name']) for t in book['targets'] if t['kind'] not in {'heading','figure','table'}),
             styled_subheadings=sum(t['kind']=='subheading' for t in edited.registry),formula_modules=sum(t['kind']=='formula' for t in edited.registry),
@@ -280,12 +290,14 @@ def write_render_report(output,result):
     s=result['statistics'];c=result['compilation']
     current=result.get('processing_method','').startswith('page_content_keywords_v')
     lines=['# 三阶段结果的 LaTeX 排版报告','',
-           '**本次排版 DeepSeek 调用 0 次，API 费用 0。** 直接复用保存的标题、类型删除、合并和本地编号映射结果。','',
+           '复用保存的标题、类型删除、合并和本地编号映射结果；仅对定位到编译错误的公式发送原图进行 LaTeX 格式恢复。','',
+           f"公式编译恢复状态：{result.get('formula_repairs',{}).get('status','not_needed')}；修复公式 {result.get('formula_repairs',{}).get('repaired_atoms',0)} 个。模型请求与重试用量见 reports/formula_repairs.json，原图、回复和编译历史均保留。",'',
+           f"表格编译恢复状态：{result.get('table_repairs',{}).get('status','not_needed')}；修复表格 {result.get('table_repairs',{}).get('repaired_atoms',0)} 个。只调整排版模板，原单元格逐字填回；原图、反馈与验证见 reports/table_repair。",'',
            f"状态：{result['status']}。标题 {s['headings']} 个，处理块 {s['processed_blocks']} 个；加粗小标题 {s['styled_subheadings']} 个，公式颜色框 {s['formula_modules']} 个，例题 {s['examples']} 个。",'',
            ('一级标题独占居中标题页；二级标题另起一页；三级及以下不强制换页。特殊块使用用户指定的类型配色，具体设置见 render_result.json 的 block_colors。小标题加粗，独立公式使用原生数学排版。' if result.get('block_colors') else
             '一级标题独占居中标题页；二级标题另起一页；三级及以下不强制换页。定义用绿色块，定理/命题/引理/推论用橙色块，算法用青色块；例题使用黑色分隔线，小标题加粗。独立公式按普通数学公式排版，不添加颜色框。'),'',
            f"原文明示名称 {s.get('named_special_blocks',0)} 个进入对象登记记录；特殊块标题显示原文的类型、编号和名称，保留原有括号、引号等符号。名称不重复出现在框内正文开头；无明确名称时不添加名称。",'',
-           (f"第二步提取的 {s.get('native_formula_special_blocks',0)} 个公式特殊块保留识别与来源记录，排版使用原生公式，不添加颜色框。排版阶段不改写识别内容；编号小标题蓝色加粗，字号大于正文；例题题目用楷体、解答用仿宋。" if current else
+           (f"第二步提取的 {s.get('native_formula_special_blocks',0)} 个公式特殊块保留识别与来源记录，排版使用原生公式，不添加颜色框。原始识别内容保持原样；编译失败公式的排版替换单独记录，不改变原来源坐标与锚点。编号小标题蓝色加粗，字号大于正文；例题题目用楷体、解答用仿宋。" if current else
             f"旧 DeepSeek 结果中的 {s['ignored_legacy_formula_modules']} 个公式特殊块不再单独着色；公式原文、保存的纠错、编号与引用跳转保留。[原生公式样式记录](reports/ignored_formula_modules.json)"),'',
            f"唯一候选引用提示 {s['linked_reference_hints']} 条生成跳转；多候选、未命中或同一片段目标冲突 {s['ambiguous_or_unmatched_hints']} 条保留原文，不任选目标。名称与例题编号不参与映射。",'',
            '[未生成跳转的引用提示](reports/unlinked_reference_hints.json)','',
@@ -300,9 +312,9 @@ def write_render_report(output,result):
         if result.get('large_bottom_gap_pages'):
             lines += ['自动留白筛查（排除独立标题页、强制分页前页和末页）：'+
                       ', '.join(str(p['page']) for p in result['large_bottom_gap_pages'])+'。这些是待查看页面，不等同于内容丢失。','']
-    else:lines += ['编译出错，未标记完成；未调用模型纠错。源码与 latex/main.log、latex/compile-output.txt 保留。','', '```text',c['log_tail'][-3500:],'```','']
+    else:lines += ['编译恢复尚未成功，未标记完成；详情见 reports/formula_repairs.json。源码与 latex/main.log、latex/compile-output.txt 保留。','', '```text',c['log_tail'][-3500:],'```','']
     history=Path(output)/'reports/compile_history'
     if history.exists():
         lines += ['## 编译历史','',
-                  '较早编译记录保存在 reports/compile_history。首次出现的标题书签数学展开错误已在通用 LaTeX 生成器中处理：印刷目录和标题保留原公式，PDF 书签使用 Unicode 文本。Unicode 下标数字使用等价数学字形，避免标题字体缺字。未请求模型修改文字或公式。','']
+                  '较早编译记录保存在 reports/compile_history。失败公式的原图、模型回复、独立公式语法验证和排版替换保存在 reports/formula_repair。','']
     (Path(output)/'render_report.md').write_text('\n'.join(lines),encoding='utf-8')

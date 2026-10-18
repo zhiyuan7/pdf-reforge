@@ -96,7 +96,8 @@ class DeepSeekClient:
             with self.calls.open("a", encoding="utf-8") as stream:
                 stream.write(json.dumps(row, ensure_ascii=False) + "\n")
 
-    def ask(self, task, system, payload, images=(), validator=None, *, max_tokens=None, thinking=None):
+    def ask(self, task, system, payload, images=(), validator=None, *, max_tokens=None, thinking=None,
+            retry_until_valid=False):
         request_config = {**self.config,
                           "max_tokens": self.config["max_tokens"] if max_tokens is None else max_tokens,
                           "thinking": self.config["thinking"] if thinking is None else thinking}
@@ -130,22 +131,29 @@ class DeepSeekClient:
             mime = "image/png" if image.suffix.lower() == ".png" else "image/jpeg"
             data = base64.b64encode(image.read_bytes()).decode()
             content.append({"type": "image_url", "image_url": {"url": "data:" + mime + ";base64," + data, "detail": "high"}})
-        messages = [{"role": "system", "content": system}, {"role": "user", "content": content}]
+        original_messages = [{"role": "system", "content": system}, {"role": "user", "content": content}]
+        feedback_path = self.cache / 'feedback' / (key + '.json')
+        feedback = read(feedback_path) if retry_until_valid and feedback_path.exists() else {}
+        effective_thinking = feedback.get('thinking', request_config['thinking'])
+        history = feedback.get('history', [])
+        messages = original_messages + history
         last_type = "invalid_response"
         last_service_failure = False
-        for attempt in range(1, self.config["attempts"] + 1):
+        attempt = feedback.get('next_attempt', 1) if retry_until_valid else 1
+        service_failures = 0
+        while retry_until_valid or attempt <= self.config["attempts"]:
             if self.cancel.is_set():
                 raise APIFailure("Conversion cancelled")
             raw = None
             try:
                 if self.transport:
-                    raw = self.transport(task, messages, request_config)
+                    raw = self.transport(task, messages, {**request_config,'thinking':effective_thinking})
                 else:
                     self._connect()
                     answer = self.api.chat.completions.create(
                         model=self.config["model"], messages=messages,
                         response_format={"type": "json_object"}, max_tokens=request_config["max_tokens"],
-                        extra_body={"thinking": {"type": request_config["thinking"]}})
+                        extra_body={"thinking": {"type": effective_thinking}})
                     raw = {"content": answer.choices[0].message.content,
                            "finish_reason": answer.choices[0].finish_reason,
                            "usage": answer.usage.model_dump() if answer.usage else {}}
@@ -156,34 +164,57 @@ class DeepSeekClient:
                 raise
             except Exception as error:
                 last_service_failure = True
+                service_failures += 1
                 code = getattr(error, "status_code", None)
                 last_type = type(error).__name__
                 self.record(task, attempt, error=last_type)
                 if code in (400, 401, 402, 403, 404, 422):
                     raise APIFailure(f"DeepSeek request rejected (HTTP {code}); check key, model and vision/JSON support") from None
+                if retry_until_valid and service_failures >= self.config['attempts']:
+                    raise APIFailure('DeepSeek service unavailable after retries: '+last_type) from None
             else:
                 last_service_failure = False
+                service_failures = 0
                 try:
                     self.record(task, attempt, raw.get("usage"))
                     if raw.get("finish_reason") != "stop" or not raw.get("content"):
-                        raise ValueError("Empty or truncated JSON response")
+                        raise ValueError("Empty or truncated JSON response (finish_reason="+str(raw.get('finish_reason'))+"). Return concise corrected JSON rather than exhausting the output budget.")
                     result = json.loads(raw["content"])
                     if not isinstance(result, dict):
                         raise ValueError("JSON result must be an object")
                     if validator:
                         validator(result)
                     save(path, {"key": key, "result": result, "result_sha256": fingerprint(result)})
+                    if retry_until_valid:
+                        feedback_path.unlink(missing_ok=True)
                     return result
                 except (ValueError, KeyError, TypeError, AttributeError, IndexError) as error:
                     last_type = type(error).__name__
+                    error_text = str(error)[:12000 if retry_until_valid else 500]
                     save(self.cache / "invalid" / (key + f".{attempt}.json"),
-                         {"task": task, "attempt": attempt, "validation_error": str(error)[:500],
+                         {"task": task, "attempt": attempt, "validation_error": error_text,
                           "response": raw.get("content", "") if isinstance(raw, dict) else ""})
                     # Only actual response validation errors are sent to the model.
-                    messages.append({"role": "user", "content": "Return corrected JSON only. Validation error: " + str(error)[:500]})
+                    if retry_until_valid:
+                        # A reasoning-only response is not a formula candidate.
+                        # After exhausting that budget, request direct code while
+                        # continuing the same image/compiler feedback loop.
+                        if raw.get('finish_reason') == 'length':
+                            effective_thinking = 'disabled'
+                        # Keep the failed candidate beside its exact diagnostic. The
+                        # original message, including the original image, stays in
+                        # every request; bound history rather than repair attempts.
+                        history += [{"role":"assistant", "content":raw.get('content') or '{}'},
+                                    {"role":"user", "content":"The preceding candidate failed validation. Use the original image to return corrected JSON. Exact validation error:\n"+error_text}]
+                        history = history[-6:]
+                        save(feedback_path,dict(task=task,next_attempt=attempt+1,history=history,thinking=effective_thinking))
+                        messages = original_messages + history
+                    else:
+                        messages.append({"role": "user", "content": "Return corrected JSON only. Validation error: " + error_text})
                     self.record(task, attempt, error=last_type)
-            if attempt < self.config["attempts"]:
-                self.sleep(min(30, 2 ** attempt + random.random()))
+            if retry_until_valid or attempt < self.config["attempts"]:
+                self.sleep(min(30, 2 ** min(attempt, 5) + random.random()))
+            attempt += 1
         if last_service_failure:
             raise APIFailure("DeepSeek service unavailable after retries: " + last_type)
         raise DecisionUncertain("Invalid model decision after retries: " + last_type)

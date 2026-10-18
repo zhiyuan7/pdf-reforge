@@ -8,11 +8,11 @@ from difflib import SequenceMatcher
 from pathlib import Path
 
 from book_pipeline.ai.client import DecisionUncertain
-from book_pipeline.config import save
+from book_pipeline.config import digest, save
 from book_pipeline.ingestion.source import SourceIndex, load_source
-from .headings import group_blocks, heading_tail_end, parse_number, span_for
+from .headings import group_blocks, heading_tail_end, parse_number, span_for, valid_box
 from .layout import analyze_layout, apply_layout_to_outline, printed_number, project_layout
-from .toc_catalog import normalized, occurrences, read_catalog
+from .toc_catalog import METHOD as CATALOG_METHOD, normalized, occurrences, read_catalog
 from .exercise_headings import classify_exercise_headings
 
 
@@ -63,11 +63,11 @@ class TocMatcher:
             match['lo'] < m['hi'] and match['hi'] > m['lo'] for m in matches.values())
 
     def expected_page(self, entry):
-        label = printed_number(entry['printed_page'])
+        label = printed_number(entry['printed_page'] or '')
         if not label:return None
         offsets = Counter()
         for e in self.entries:
-            other = printed_number(e['printed_page'])
+            other = printed_number(e['printed_page'] or '')
             if e['id'] in self.matches and other and other[0] == label[0]:
                 offsets[self.matches[e['id']]['page'] - other[1]] += 1
         if not offsets:return None
@@ -293,12 +293,19 @@ def analyze_toc_headings(index,metadata,client,config,directory,progress=lambda 
 def verify_matching(outline,index):
     """Audit source coverage of the catalogue, hierarchy, and presentation intent."""
     entries={e['id']:e for e in outline['toc_entries']}
-    previous=-1
-    for e in outline['toc_entries']:
-        lo,hi=index.span({'start':e['toc_start'],'end':e['toc_end']})
-        if not previous<=lo<hi or index.text(lo,hi)!=e['title']:
-            raise ValueError('TOC catalogue address, original text or ordering is invalid')
-        previous=hi
+    previous_page=0
+    checked_images={}
+    for n,e in enumerate(outline['toc_entries'],1):
+        if e.get('catalog_source') != CATALOG_METHOD:
+            raise ValueError('Rebuild the TOC catalogue from original images')
+        page=e['toc_page'];image=e['toc_image'];path=Path(image['path'])
+        if path not in checked_images:
+            checked_images[path]=digest(path)
+        if (e['id']!=f'toc-{n:04d}' or not isinstance(page,int) or isinstance(page,bool)
+                or not 1<=page<=index.source['source_page_count'] or page<previous_page
+                or not valid_box(e['bbox']) or checked_images[path]!=image['sha256']):
+            raise ValueError('TOC image provenance or page ordering is invalid')
+        previous_page=page
     headings=sorted(outline['headings'],key=lambda h:index.position(h['start']))
     previous=-1
     for h in headings:
@@ -319,7 +326,7 @@ def verify_matching(outline,index):
     from .pagination import HeadingPagination
     layout=HeadingLayout(headings,outline['metadata_config'].get('heading_layout'))
     pagination=HeadingPagination([{**h,'lo':index.position(h['start']),'anchor':h['toc_id']} for h in headings],layout=layout)
-    return {'目录条目来源地址与顺序':'通过','标题对应来源地址与原文':'通过',
+    return {'目录原图哈希、区域与跨页顺序':'通过','标题对应正文来源地址与原文':'通过',
             '非正文层级统一加一':'通过','匹配范围及不重复使用来源':'通过',
             '确认标题数':len(headings),'最终层级分布':dict(Counter(layout.level(h) for h in headings)),
             '按现有配置独占页的一级标题数':sum(layout.standalone(h) for h in headings),
@@ -353,14 +360,14 @@ def write_matching_report(directory,outline,index,verification=None):
            f"目录候选 {counts['toc_candidates']} 个（正文 {counts['body']}，非正文 {counts['non_body']}）；已匹配 {counts['matched']}，未匹配 {counts['unmatched']}。",'',
            f"MinerU 识别候选 {counts['recognized_candidates']} 个；其中 {counts['bold_only']} 个仅保留为加粗正文，不进入标题树、目录或书签。",'',
            '正文和非正文分别从一级分级；非正文最终层级统一加一。匹配保留原目录顺序和真实来源文字。未找到的目录条目明确报告，不凭目录创造正文。','',
-           'DeepSeek 在标题匹配后判定习题标题，判定结果和继承范围见 `exercise_headings.json`；这些范围保留原文，后续跳过编号小标题识别与样式。','',
+           'DeepSeek 在标题匹配后判定习题及答案/解析标题，判定结果和继承范围见 `exercise_headings.json`；这些范围保留原文和已匹配目录标题，后续跳过编号小标题识别与样式。','',
            '本次只提取目录图片、匹配标题和验证来源地址及分页策略；未生成 LaTeX、未编译或渲染新 PDF。','',
            '## 匹配方法统计','']
     names={'normalized_recognized_title':'程序归一化匹配识别标题','deepseek_recognized_title':'DeepSeek 匹配识别标题',
            'bounded_source_text':'前后界限内检索全部文字','deepseek_bounded_source_text':'DeepSeek 匹配范围内来源文字'}
     for method,count in report['methods'].items():lines.append(f"- {names.get(method,method)}：{count}。")
     exercises=[h for h in outline['headings'] if h.get('is_exercise_heading')]
-    lines+=['','## 习题标题','']
+    lines+=['','## 习题及答案/解析标题','']
     lines.extend(f"- {h['toc_id']}：{h['title']}。" for h in exercises)
     if not exercises:lines.append('无。')
     if verification:

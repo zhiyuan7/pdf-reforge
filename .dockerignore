@@ -1,0 +1,26 @@
+# Only distributable application files enter the build context.
+**
+!Dockerfile
+!requirements.txt
+!requirements-web.txt
+!requirements-mineru.txt
+!install_book_tex.py
+!main.py
+!serve.py
+!run_mineru.py
+!mineru_checkpoint.py
+!pipeline_progress.py
+!book_config.json
+!book_metadata.example.yaml
+!book_pipeline/
+!book_pipeline/**
+!book_templates/
+!book_templates/**
+!docker/
+!docker/**
+!models/
+!models/font_candidates/
+!models/font_candidates/LxgwWenkaiGB/
+!models/font_candidates/LxgwWenkaiGB/**
+**/__pycache__/
+**/*.py[cod]

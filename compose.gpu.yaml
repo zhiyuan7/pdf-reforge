@@ -1,0 +1,16 @@
+# NVIDIA GPU inference with the same image, models, inputs and output volume.
+# docker compose -f compose.yaml -f compose.gpu.yaml up -d --build
+services:
+  pdf-reforge:
+    runtime: nvidia
+    environment:
+      NVIDIA_DRIVER_CAPABILITIES: compute,utility,graphics
+    entrypoint: ["python", "/app/docker/require_gpu.py"]
+    command: ["python", "serve.py", "--host", "0.0.0.0", "--port", "8765"]
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              device_ids: ["${PDF_REFORGE_GPU_ID:-0}"]
+              capabilities: [gpu]

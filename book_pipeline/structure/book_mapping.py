@@ -50,7 +50,7 @@ def classified_modules(index, units, plan, report, directory):
     identities = {(sid, special_block_key(sid, m)) for sid, modules in groups.items() for m in modules}
     sections = {r['section']['id']: r for r in report['sections']}
     judgments = read(audit) if audit.is_file() else []
-    if judgments:
+    if judgments and not report.get('special_block_filter', {}).get('discarded_roles_inactive'):
         for row in judgments:
             module, sid = row.get('module'), row.get('section')
             if module and sid in groups and module['type'] == 'subheading' and row.get('discard_reason') == 'confirmed_keyword_count_at_most_10':
@@ -72,6 +72,8 @@ def classified_modules(index, units, plan, report, directory):
                               'subheading_pattern': pattern or previous,
                               '_original_subheading_pattern': previous,
                               '_unmatched_pattern': pattern is None}
+    if report.get('special_block_filter', {}).get('discarded_roles_inactive'):
+        judgments = [row for row in judgments if not row.get('discard_reason')]
     candidates = saved_subheading_candidates(index, plan, report, directory, judgments)
     recovered = recover_continuous_subheadings(index, candidates, judgments, groups, {})
     for restored in recovered:

@@ -8,7 +8,7 @@ from book_pipeline.ingestion.source import SourceIndex, load_source
 from book_pipeline.structure.headings import load_metadata
 from book_pipeline.structure.toc_matching import analyze_toc_headings, verify_matching, write_matching_report
 from book_pipeline.structure.page_content import run_page_content
-from book_pipeline.structure.exercise_headings import classify_exercise_headings
+from book_pipeline.structure.exercise_headings import classify_exercise_headings, METHOD as EXERCISE_METHOD
 from book_pipeline.structure.rule_mapping import run_rule_mapping
 from book_pipeline.publishing.processed_book import render_saved_book
 
@@ -44,7 +44,7 @@ def process_content(index, heading_directory, config, output, seed, progress):
         raise ValueError('正文处理需要独立的输出目录')
     outline = read(heading_directory / 'outline.json')
     client = DeepSeekClient(config, output / 'cache')
-    if not outline.get('exercise_heading_classification'):
+    if outline.get('exercise_heading_classification', {}).get('method') != EXERCISE_METHOD:
         outline = classify_exercise_headings(outline,client,heading_directory,progress)
         write_matching_report(heading_directory,outline,index,read(heading_directory/'heading_matches.json').get('verification'))
     report = run_page_content(index, outline, client, output, seed=seed, progress=progress)

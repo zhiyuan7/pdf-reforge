@@ -9,6 +9,26 @@ from copy import deepcopy
 from pathlib import Path
 
 
+def normalize_middle_json(middle):
+    """Make SDK-emitted null defaults readable without changing continuation flags.
+
+    DocVortex forbids continues_prev on nested blocks, even when it is null.
+    Its default-inclusive serializer still emits that unset field. Keep the
+    original checkpoint intact and remove only this null default in page trees;
+    explicit True/False values remain available for strict SDK validation.
+    """
+    result = deepcopy(middle)
+    containers = {'index', 'list', 'image', 'table', 'chart', 'code'}
+    pending = [(block, False) for page in result['pages'] for block in page.get('blocks', [])]
+    while pending:
+        block, nested = pending.pop()
+        if nested and 'continues_prev' in block and block['continues_prev'] is None:
+            del block['continues_prev']
+        if block.get('type') in containers:
+            pending.extend((child, True) for child in block.get('content', []) if isinstance(child, dict))
+    return result
+
+
 def sha256(path):
     value=hashlib.sha256()
     with Path(path).open('rb') as stream:

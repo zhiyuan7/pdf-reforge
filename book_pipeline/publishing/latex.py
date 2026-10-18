@@ -11,7 +11,7 @@ from book_pipeline.config import ROOT, digest, save
 from book_pipeline.structure.semantics import HEADINGS, LABELS
 from book_pipeline.structure.numbered import CAPTION_ROLES
 from book_pipeline.ingestion.source import corrected_content
-from book_pipeline.ingestion.math_syntax import math_compatibility, formula_tags
+from book_pipeline.ingestion.math_syntax import math_compatibility, formula_tags, compatible_equation_tag
 from book_pipeline.structure.paragraphs import supported_joins
 from book_pipeline.structure.heading_layout import HeadingLayout
 from book_pipeline.publishing.colors import COLOR_KINDS, color_definitions, selected_color, validate_colors
@@ -151,6 +151,22 @@ def table_tex(html, in_box=False):
     rows = parser.rows
     if parser.complex or not rows or len({len(r) for r in rows}) != 1:
         return None
+    # Malformed OCR math in one cell must not abort the entire book. Preserve
+    # the original table image via the existing complex-table fallback instead.
+    for row in rows:
+        for cell in row:
+            depth, dollars, i = 0, 0, 0
+            while i < len(cell):
+                if cell[i] == '\\' and i+1 < len(cell) and cell[i+1] in '{}$\\':
+                    i += 2
+                    continue
+                if cell[i] == '{': depth += 1
+                if cell[i] == '}': depth -= 1
+                if cell[i] == '$': dollars += 1
+                if depth < 0: return None
+                i += 1
+            if depth or dollars % 2 or cell.count(r'\(') != cell.count(r'\)'):
+                return None
     columns = len(rows[0])
     if not 1 <= columns <= 10:
         return None
@@ -195,6 +211,8 @@ class Renderer:
         self.corrections = defaultdict(list)
         self.issues = []
         self.tex_compatibility=[]
+        self.formula_repairs = decisions.get('formula_repairs', {})
+        self.table_repairs = decisions.get('table_repairs', {})
         self.source_order_layout=[]
         joins, rejected = supported_joins(index, decisions)
         self.issues.extend(rejected)
@@ -368,6 +386,11 @@ class Renderer:
         changes += [(m['start'], m['end'], r'\mbox{' + m['tex'] + '}') for m in self.footnote_markers[atom['id']]]
         for start, end, replacement in sorted(changes, reverse=True):
             content = content[:start] + replacement + content[end:]
+        if atom['id'] in self.formula_repairs:
+            replacement = self.formula_repairs[atom['id']]
+            self.tex_compatibility.append(dict(atom=atom['id'], original=content, rendered=replacement,
+                evidence=['formula image re-read after a compiler error; replacement passed XeLaTeX syntax validation']))
+            content = replacement
         if atom['kind'] in {'math','display_math'}:
             compatible,evidence=math_compatibility(content)
             if evidence:
@@ -381,9 +404,6 @@ class Renderer:
             image_reason = 'multiple equation tags' if len(tags) > 1 else None
             if len(re.findall(r'\\tag\*?\s*\{', tex)) != len(tags):
                 image_reason = 'unbalanced equation tag delimiters'
-            if len(tags) == 1 and re.search(r'(?<!\\)[_^]', tags[0]['tex']) and not any(
-                    delimiter in tags[0]['tex'] for delimiter in ('$', r'\ensuremath', r'\(')):
-                image_reason = 'math-only syntax in a text-mode equation tag'
             if image_reason:
                 # OCR can mistake a left-hand item label for a second equation
                 # number, or duplicate part of the right-hand number. Neither
@@ -397,7 +417,10 @@ class Renderer:
             # Keep the original equation number outside the measured math
             # box. Only oversized expressions are reduced to fit the column.
             if len(tags) <= 1:
-                tag = tags[0]['tex'] if tags else ""
+                tag = compatible_equation_tag(tags[0]['tex']) if tags else ""
+                if tags and tag != tags[0]['tex']:
+                    self.tex_compatibility.append(dict(atom=atom['id'], original=tags[0]['tex'], rendered=tag,
+                        evidence=['mathematical equation number wrapped in ensuremath; original number preserved']))
                 if tags:
                     tex = tex[:tags[0]['start']] + tex[tags[0]['end']:]
                 tex = "\\BookMath[" + ("48pt" if tag else "0pt") + "]{" + tex + "}" + tag
@@ -405,9 +428,15 @@ class Renderer:
         if atom["kind"] == "image":
             return self.image_tex(atom)
         if atom["kind"] == "table":
-            converted = table_tex(content, in_box)
+            if atom['id'] in self.table_repairs:
+                from book_pipeline.publishing.table_repair import expand_template
+                converted = expand_template(content, self.table_repairs[atom['id']], in_box)
+                self.tex_compatibility.append(dict(atom=atom['id'], original=content, rendered=converted,
+                    evidence=['table layout repaired after compiler feedback; every source cell preserved exactly']))
+            else:
+                converted = table_tex(content, in_box)
             if converted:
-                return converted
+                return '\n% source-atom: '+atom['id']+'\n% source-table-in-box: '+str(int(in_box))+'\n'+converted+'\n% end-source-atom: '+atom['id']+'\n'
             if not atom.get("asset"):
                 raise ValueError("Complex table has no source image: " + atom["id"])
             self.issues.append({"reason": "complex_table_preserved_as_image", "atom": atom["id"]})

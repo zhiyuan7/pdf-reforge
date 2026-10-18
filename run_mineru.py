@@ -16,7 +16,7 @@ import sys
 import time
 
 from pipeline_progress import emit
-from mineru_checkpoint import checkpoint_path, expand_empty_pages, read_checkpoint, write_checkpoint, sha256, recognize_pages
+from mineru_checkpoint import checkpoint_path, expand_empty_pages, read_checkpoint, write_checkpoint, sha256, recognize_pages, normalize_middle_json
 
 
 ROOT = Path(__file__).resolve().parent
@@ -119,6 +119,7 @@ def run(args: argparse.Namespace) -> Path:
     if inference_reused:
         from mineru.parser import ParseResult
         from mineru.types import ModelJson
+        payload['middle_json']=normalize_middle_json(payload['middle_json'])
         parsed=ParseResult.from_dict(payload['middle_json'])
         model=ModelJson.from_dict(payload['model_output']) if payload.get('model_output') is not None else None
         result=ParseResult(parsed.middle_json,model)
@@ -133,7 +134,7 @@ def run(args: argparse.Namespace) -> Path:
                 raise RuntimeError('输入 PDF 在推理期间发生变化，未提交该页缓存')
         def parse_page(page_idx):
             parsed=parse(str(pdf),tier=args.tier,ocr_mode=args.ocr_mode,page_range=str(page_idx+1))
-            return {'middle_json':parsed.middle_json.to_dict(skip_defaults=False),
+            return {'middle_json':normalize_middle_json(parsed.middle_json.to_dict(skip_defaults=False)),
                     'model_output':parsed._model_output.to_dict(skip_defaults=False) if parsed._model_output is not None else None}
         def page_progress(phase,done,total,page_number):
             emit(phase,done,total,detail=f'原 PDF 第 {page_number} 页',page_number=page_number)
@@ -148,6 +149,7 @@ def run(args: argparse.Namespace) -> Path:
         if sha256(pdf)!=input_sha256:raise RuntimeError('输入 PDF 在推理期间发生变化，未提交整本缓存')
         from mineru.parser import ParseResult
         from mineru.types import ModelJson
+        payload['middle_json']=normalize_middle_json(payload['middle_json'])
         parsed=ParseResult.from_dict(payload['middle_json'])
         model=ModelJson.from_dict(payload['model_output']) if payload.get('model_output') is not None else None
         result=ParseResult(parsed.middle_json,model)

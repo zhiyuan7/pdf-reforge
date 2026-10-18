@@ -2,6 +2,18 @@
 import re
 
 
+def compatible_equation_tag(tag):
+    """Keep a mathematical equation number inside math mode in amsmath's tag."""
+    match = re.fullmatch(r'(\\tag\*?\s*\{)(.*)\}', tag, re.S)
+    if not match:
+        return tag
+    label = match[2]
+    if re.search(r'(?<!\\)[_^]', label) and not any(
+            delimiter in label for delimiter in ('$', r'\ensuremath', r'\(')):
+        return match[1] + r'\ensuremath{' + label + '}}'
+    return tag
+
+
 def math_compatibility(text):
     """Preserve formula tokens while making simple OCR arrays valid TeX."""
     changes=[]

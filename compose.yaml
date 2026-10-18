@@ -1,0 +1,21 @@
+services:
+  pdf-reforge:
+    image: pdf-reforge:local
+    build:
+      context: .
+    init: true
+    restart: unless-stopped
+    ports:
+      - "127.0.0.1:${PDF_REFORGE_PORT:-8765}:8765"
+    env_file:
+      - .env
+    volumes:
+      - ./book_config.json:/app/book_config.json:ro
+      - ./input_pdfs:/app/input_pdfs:ro
+      - ./output/docker:/app/output
+      - model-cache:/cache
+    shm_size: 1gb
+    stop_grace_period: 60s
+
+volumes:
+  model-cache:

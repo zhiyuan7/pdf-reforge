@@ -697,6 +697,87 @@ def parallel(client, items, operation, stage, progress):
     return rows
 
 
+def resolve_special_blocks(index, candidates, initial, base_edits, client, directory, progress):
+    """Only retained roles may constrain or overlap other special blocks.
+
+    Boundary review can lower a keyword's count below the retention threshold.
+    In that case rebuild from the independent decisions, removing the dropped
+    role and any boundary error it caused. Direct model errors remain unresolved.
+    The active keyword set only shrinks, so this process terminates.
+    """
+    by_candidate = {c['b']: c for c in candidates}
+    initial_counts = Counter(r['keyword'] for r in initial if r.get('module'))
+    active = {k for k, total in initial_counts.items() if total > MINIMUM_OCCURRENCES}
+    passes = []
+    while True:
+        judgments = [dict(r) for r in initial]
+        section_edits = {sid: {k: list(v) for k, v in edits.items()} for sid, edits in base_edits.items()}
+        declarations = [r for r in judgments if r.get('module') and r['keyword'] in active]
+        repairs = []
+        for n, row in enumerate(declarations):
+            following = next((r for r in declarations[n+1:] if r['section'] == row['section']), None)
+            if following and any(r['hi'] > by_candidate[following['b']]['lo'] for r in row['module']['selected_ranges']):
+                repairs.append((row, following))
+        def repair(pair):
+            row, following = pair
+            c = by_candidate[row['b']]
+            sub = directory/'special_blocks'/row['b']
+            save(sub/'initial_result.json', row)
+            try:
+                result = judge_candidate(client, c, sub/'boundary_review', following['b'], index=index)
+                module = candidate_module(index, c, result, client.config)
+                updated = {k: v for k, v in result.items() if k != 'blocks'}
+                updated.update(section=c['section'], b=c['b'], member_blocks=[b['b'] for b in result['blocks']], module=module,
+                               response_directory='boundary_review', boundary_repair=True)
+            except DecisionUncertain as error:
+                updated = dict(section=c['section'], b=c['b'], keyword=c['keyword'], error=str(error), module=None)
+            return updated
+        repaired = {r['b']: r for r in parallel(client, repairs, repair, 'keyword-boundary-review', progress)}
+        judgments = [repaired.get(r['b'], r) for r in judgments]
+        for row in judgments:
+            edits = section_edits[row['section']]
+            module = row['module']
+            if row.get('error'):
+                edits['u'].append(dict(b=row['b'], why=row['error']))
+            elif module and row['keyword'] in active:
+                overlapping = any(a['lo'] < b['hi'] and a['hi'] > b['lo']
+                                  for previous in edits['s'] for a in previous['selected_ranges'] for b in module['selected_ranges'])
+                if overlapping:
+                    edits['rejected'].append(dict(operation='s', suggestion=module, reason='Overlaps an earlier keyword object'))
+                else:
+                    edits['s'].append(module)
+                    row['adopted'] = True
+        deepseek_counts = Counter(m['keyword'] for edits in section_edits.values() for m in edits['s'])
+        recovered = recover_continuous_subheadings(index, candidates, judgments,
+                                                   {sid: e['s'] for sid, e in section_edits.items()}, client.config)
+        for restored in recovered:
+            module = {k: v for k, v in restored.items() if k not in {'section', 'b'}}
+            section_edits[restored['section']]['s'].append(module)
+            row = next(r for r in judgments if r['b'] == restored['b'])
+            row.update(module=module, adopted=True, member_blocks=module['member_blocks'],
+                       subheading_continuity=module['subheading_continuity'])
+        confirmed_counts = Counter(m['keyword'] for edits in section_edits.values() for m in edits['s'])
+        retained = {k for k in active if confirmed_counts[k] > MINIMUM_OCCURRENCES}
+        passes.append(dict(active_keywords=sorted(active), removed_keywords=sorted(active-retained),
+                           boundary_reviews=[dict(b=r['b'], next_declaration=f['b']) for r, f in repairs]))
+        if retained != active:
+            active = retained
+            continue
+        for edits in section_edits.values():
+            edits['s'].sort(key=lambda m: m['lo'])
+        discarded = 0
+        for row in judgments:
+            if row.get('module') and row['keyword'] not in retained:
+                row.update(adopted=False, discard_reason='confirmed_keyword_count_at_most_10')
+                discarded += 1
+            row.setdefault('adopted', False)
+            save(directory/'special_blocks'/row['b']/'result.json', row)
+        save(directory/'special_block_resolution.json', dict(
+            policy='filter_roles_before_boundary_review_and_overlap', passes=passes,
+            independently_confirmed_occurrences=dict(initial_counts)))
+        return judgments, section_edits, recovered, deepseek_counts, confirmed_counts, retained, discarded
+
+
 def run_page_content(index, outline, client, directory, count=None, seed=20261008, progress=None, *, saved_plan=None):
     directory = Path(directory)
     plan = dict(saved_plan) if saved_plan is not None else split_source(index, outline)
@@ -772,71 +853,15 @@ def run_page_content(index, outline, client, directory, count=None, seed=2026100
         return row
     by_candidate={c['b']:c for c in candidates}
     judgments = sorted(parallel(client, candidates, one, 'keyword-special-blocks', progress), key=lambda r:by_candidate[r['b']]['lo'])
-    # A subsequent candidate independently confirmed by the model is a new
-    # declaration. Repair only earlier decisions that crossed that boundary.
-    repairs=[]
-    for n,row in enumerate(judgments):
-        if not row.get('module'):continue
-        following=next((r for r in judgments[n+1:] if r['section']==row['section'] and r.get('module')),None)
-        if following and any(r['hi']>by_candidate[following['b']]['lo'] for r in row['module']['selected_ranges']):
-            repairs.append((row,following))
-    def repair(pair):
-        row,following=pair;c=by_candidate[row['b']];sub=directory/'special_blocks'/row['b']
-        save(sub/'initial_result.json',row)
-        try:
-            result=judge_candidate(client,c,sub/'boundary_review',following['b'],index=index)
-            module=candidate_module(index,c,result,client.config)
-            updated={k:v for k,v in result.items() if k!='blocks'}
-            updated.update(section=c['section'],b=c['b'],member_blocks=[b['b'] for b in result['blocks']],module=module,
-                           response_directory='boundary_review',boundary_repair=True)
-        except DecisionUncertain as error:
-            updated=dict(section=c['section'],b=c['b'],keyword=c['keyword'],error=str(error),module=None)
-        save(sub/'result.json',updated)
-        return updated
-    repaired={r['b']:r for r in parallel(client,repairs,repair,'keyword-boundary-review',progress)}
-    judgments=[repaired.get(r['b'],r) for r in judgments]
-    for row in judgments:
-        edits = section_edits[row['section']]
-        module = row['module']
-        if row.get('error'):
-            edits['u'].append(dict(b=row['b'], why=row['error']))
-        elif module:
-            overlapping = any(a['lo'] < b['hi'] and a['hi'] > b['lo']
-                              for previous in edits['s'] for a in previous['selected_ranges'] for b in module['selected_ranges'])
-            if overlapping:
-                edits['rejected'].append(dict(operation='s', suggestion=module, reason='Overlaps an earlier keyword object'))
-            else:
-                edits['s'].append(module)
-                row['adopted'] = True
-    deepseek_counts = Counter(m['keyword'] for edits in section_edits.values() for m in edits['s'])
-    recovered = recover_continuous_subheadings(index, candidates, judgments,
-                                               {sid: e['s'] for sid, e in section_edits.items()}, client.config)
+    judgments, section_edits, recovered, deepseek_counts, confirmed_counts, retained_keywords, discarded = resolve_special_blocks(
+        index, candidates, judgments, section_edits, client, directory, progress)
     continuity = dict(method=CONTINUITY_METHOD, anchor_minimum_exclusive=MINIMUM_OCCURRENCES,
                       restored=recovered, restored_count=len(recovered), model_requests=0)
     save(directory/'subheading_continuity.json', continuity)
-    for restored in recovered:
-        module = {k: v for k, v in restored.items() if k not in {'section', 'b'}}
-        section_edits[restored['section']]['s'].append(module)
-        row = next(r for r in judgments if r['b'] == restored['b'])
-        row.update(module=module, adopted=True, member_blocks=module['member_blocks'],
-                   subheading_continuity=module['subheading_continuity'])
-    for edits in section_edits.values():
-        edits['s'].sort(key=lambda m: m['lo'])
     if progress:
         progress('subheading-continuity', len(recovered), len(recovered))
-    confirmed_counts = Counter(m['keyword'] for edits in section_edits.values() for m in edits['s'])
-    retained_keywords = {k for k, total in confirmed_counts.items() if total > MINIMUM_OCCURRENCES}
-    discarded = 0
-    for edits in section_edits.values():
-        discarded += sum(m['keyword'] not in retained_keywords for m in edits['s'])
-        edits['s'] = [m for m in edits['s'] if m['keyword'] in retained_keywords]
-    for row in judgments:
-        if row.get('adopted') and row['keyword'] not in retained_keywords:
-            row.update(adopted=False, discard_reason='confirmed_keyword_count_at_most_10')
-        # Preserve the model decision while recording whether its role was adopted.
-        row.setdefault('adopted', False)
-        save(directory/'special_blocks'/row['b']/'result.json', row)
     final_filter = dict(grouping='keyword_or_numbering_form', minimum_exclusive=MINIMUM_OCCURRENCES,
+                        discarded_roles_inactive=True,
                         deepseek_confirmed_occurrences=dict(deepseek_counts),
                         confirmed_occurrences={k: confirmed_counts[k] for k in discovery['keywords']},
                         retained_keywords=[k for k in discovery['keywords'] if k in retained_keywords],
@@ -901,6 +926,7 @@ def write_report(directory, report):
              '编号小标题按通用开头形式寻找，跳过完整编号后，只把第一个句末标点（含标点）之前的原文交给模型；无句末标点时使用整个候选块。确认后仅拆出该范围，后文保留为正文。', '',
              'DeepSeek 判否的小标题再按编号连续性复核：只有原本确认数超过 10 的编号形式可作为起点。同一标题范围、同一上级和编号形式内，连续序列含至少一个已确认标题时补回其余候选，覆盖开头、中间、末尾；缺号、重复或编号重新开始会断开序列。不新增模型请求，原模型答复保留。[连续性复核](subheading_continuity.json)', '',
              'DeepSeek 判断及连续性补回后按关键词或编号形式分别计数，只有超过 10 个才保留特殊块身份；不超过 10 个的恢复为普通正文，原文保留。[最终计数与过滤](special_block_filter.json)', '',
+             '已丢弃的特殊块身份不参与例题边界和模块重叠检查；后续计数下降导致丢弃时，从独立判断重建，撤销该身份引起的边界报错。真实保留对象的边界检查与独立判断失败仍生效。[过滤与边界处理](special_block_resolution.json)', '',
              f"原文明示名称本地提取 {stats.get('named_modules',0)} 个，不增加模型输出。支持成对括号、引号、书名号及明确分隔的名称；名称保存逐字来源地址，标题沿用原标点，正文从名称之后开始。数学条件与完整陈述不作为名称。",'',
              '特殊块模型结果：[逐轮输入与短响应](special_blocks)，[候选集合与匹配计数](keyword_discovery.json)，[各处匹配位置](keyword_discovery/matches.json)。', '',
              f"状态：{report['status']}；删除 {stats['deleted_marginals']} 块；跨页配对 {stats['page_pairs']} 对，合并 {stats['merged_pairs']} 对；候选 {stats['keyword_candidates']} 处，提取 {stats['extracted_modules']} 个模块。", '',
