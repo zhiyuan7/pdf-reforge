@@ -191,6 +191,28 @@ class EditedBook:
         return self.references
 
 
+def merge_footnote_continuations(original, notes):
+    """Rejoin adjacent note fragments contained in one original note rectangle."""
+    removed=set()
+    ordered=sorted(notes,key=lambda n:n['source_lo'])
+    for position,note in enumerate(ordered):
+        if note['id'] in removed or not note.get('marker'):continue
+        first=next(original.fragments(note['source_lo'],note['source_hi']))[0]
+        box=first.get('bbox') or first.get('block_bbox')
+        if not box:continue
+        for child in ordered[position+1:]:
+            if (child['page']!=note['page'] or child.get('marker') or
+                    child['source_lo']!=note['source_hi'] or child['lo']!=note['hi']):break
+            atom=next(original.fragments(child['source_lo'],child['source_hi']))[0]
+            b=atom.get('bbox') or atom.get('block_bbox')
+            if not b or not (box[0]-.005<=b[0] and b[2]<=box[2]+.005 and
+                             box[1]-.005<=b[1] and b[3]<=box[3]+.005):break
+            note.update(hi=child['hi'],source_hi=child['source_hi'],end=child['end'],
+                        text=note['text']+child['text'])
+            note.setdefault('continuation_note_ids',[]).append(child['id']);removed.add(child['id'])
+    notes[:]=[n for n in notes if n['id'] not in removed]
+
+
 def render_saved_book(original,processing,mapping_directory,metadata,config,output,progress=lambda *args:None):
     processing=Path(processing).resolve();mapping_directory=Path(mapping_directory).resolve();output=Path(output).resolve()
     inputs=[processing,mapping_directory,Path(original.source['mineru_dir']).resolve()]
@@ -214,6 +236,58 @@ def render_saved_book(original,processing,mapping_directory,metadata,config,outp
     settings={**metadata['heading_layout'],'standalone_levels':[1],'page_break_after_levels':[2]}
     native_config={**config,'float_assets':True,'start_page_levels':[2]}
     project=output/'latex';reports=output/'reports';reports.mkdir(parents=True,exist_ok=True)
+    correction_path=output/'text_corrections.json'
+    if correction_path.exists():
+        correction=read(correction_path)
+        if correction.get('source_sha256')!=fingerprint(edited.index.source):
+            raise ValueError('Render text corrections do not match the edited source')
+        for row in correction['items']:
+            atom=edited.index.atoms[edited.index.ids[row['atom']]]
+            lo,hi=row['start_offset'],row['end_offset']
+            if (atom['kind'] not in {'text','math','display_math'} or not 0<=lo<hi<=atom['length'] or
+                    atom['content'][lo:hi]!=row['expected'] or not isinstance(row['replacement'],str)):
+                raise ValueError('Render text correction does not match its exact source interval')
+            if atom['kind']!='text' and (atom['content'][max(0,lo-6):lo]!=r'\text{' or
+                    atom['content'][hi:hi+1]!='}' or re.search(r'[{}\\$]',row['replacement'])):
+                raise ValueError('Math text corrections must address a complete plain text label')
+            decisions['corrections'].append(row)
+        before[str(correction_path)]=digest(correction_path)
+    footnote_path=output/'footnote_overrides.json'
+    if footnote_path.exists():
+        overrides=read(footnote_path)
+        if overrides.get('source_sha256')!=fingerprint(edited.index.source):
+            raise ValueError('Footnote overrides do not match the edited source')
+        for override in overrides['items']:
+            note=next(n for n in edited.footnotes if n['id']==override['id'])
+            if override.get('marker'):
+                marker=override['marker']
+                if original.text(note['source_lo']+marker['start'],note['source_lo']+marker['end'])!=marker['text']:
+                    raise ValueError('Reviewed footnote marker differs from the source')
+                note['marker']=marker
+            if override.get('reference'):
+                ref=override['reference'];source_atom=original.atoms[original.ids[ref['atom']]]
+                a,z=ref['start_offset'],ref['end_offset']
+                if (source_atom['kind'] not in {'text','math'} or source_atom['page']+1!=note['page'] or
+                        not 0<=a<z<=source_atom['length'] or source_atom['content'][a:z]!=ref['expected']):
+                    raise ValueError('Reviewed footnote reference differs from the exact same-page source')
+                base=original.prefix[original.ids[ref['atom']]]
+                options=[dict(atom=ref['atom'],block=source_atom['group'],lo=base+a,hi=base+z,
+                              start_offset=a,end_offset=z,insert_after=base+z,kind=source_atom['kind'],
+                              text=ref['expected'],page=note['page'])]
+            else:
+                options=[c for c in note['candidates'] if c['atom']==override['atom'] and
+                         c['start_offset']==override['start_offset']]
+            if len(options)!=1 or not note.get('marker'):
+                raise ValueError('A footnote override must select one existing source candidate')
+            reference=options[0];a,z=edited.project(reference['lo'],reference['hi'])
+            atom=edited.index.atoms[edited.index.ids[edited.index.address(z,True)['atom']]]
+            note.update(status='matched',reason='reviewed_original_source_marker',
+                        reference={**reference,'edited_lo':a,'edited_hi':z},
+                        insert_after=z if atom['kind']=='text' else edited.index.prefix[edited.index.ids[atom['id']]+1])
+            marker=note['marker']
+            note['marker_lo'],note['marker_hi']=edited.project(note['source_lo']+marker['start'],note['source_lo']+marker['end'])
+        before[str(footnote_path)]=digest(footnote_path)
+    merge_footnote_continuations(original,edited.footnotes)
     save(reports/'input_sources.json',dict(source=book['source'],processing=str(processing),mapping=str(mapping_directory),
          processed_sha256=book['processed_sha256'],targets_sha256=mapping['targets_sha256'],input_files_sha256=before))
     save(reports/'edited_source.json',edited.index.source)

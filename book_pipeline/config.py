@@ -61,6 +61,10 @@ def load_config(path=None):
     if unknown:
         raise ValueError("Unknown book configuration: " + ", ".join(sorted(unknown)))
     config = {**defaults, **custom}
+    if config['input_mode'] not in {'auto', 'ocr'}:
+        raise ValueError('input_mode must be auto or ocr')
+    if config['translation'] not in {'auto', 'off'}:
+        raise ValueError('translation must be auto or off')
     toc_pages = config.get('toc_pages', [])
     if not isinstance(toc_pages,list) or any(isinstance(p,bool) or not isinstance(p,int) or p<1 for p in toc_pages) or len(set(toc_pages))!=len(toc_pages) or toc_pages!=sorted(toc_pages):
         raise ValueError('toc_pages must be increasing unique positive physical PDF page numbers')

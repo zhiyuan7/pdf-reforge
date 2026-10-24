@@ -38,17 +38,34 @@ def locate_source_errors(project, compilation, atoms, kinds):
         lines = path.read_text(encoding='utf-8').splitlines()
         if not 1 <= error['line'] <= len(lines):
             continue
-        active = None
+        active, fragment, unclosed = None, [], []
         for line in lines[:error['line']]:
             # Inline math's marker may follow a hypertarget on the same line.
             start = re.search(r'(?<!\\)% source-atom: (\S+)', line)
             if start:
                 active = start[1]
+                fragment = []
+            if active:
+                fragment.append(line)
             if re.search(r'(?<!\\)% end-source-atom:', line):
+                # TeX reports an unclosed \text{... group at the next paragraph,
+                # after our end marker. Associate only a demonstrably unclosed
+                # rendered source fragment, never a nearby balanced formula.
+                if active in by_id:
+                    depth, i, text = 0, 0, '\n'.join(fragment)
+                    while i<len(text):
+                        if text[i]=='\\': i+=2;continue
+                        if text[i]=='%':
+                            end=text.find('\n',i)
+                            i=end if end>=0 else len(text);continue
+                        if text[i]=='{':depth+=1
+                        elif text[i]=='}':depth-=1
+                        i+=1
+                    if depth>0:unclosed.append(active)
                 active = None
-        if active in by_id and active not in seen:
-            result.append((by_id[active], error))
-            seen.add(active)
+        for candidate in ([active] if active in by_id else unclosed):
+            if candidate not in seen:
+                result.append((by_id[candidate], error));seen.add(candidate)
     return result
 
 
@@ -144,9 +161,10 @@ class FormulaRepairer:
             body = body[:t['start']] + body[t['end']:]
             tag = compatible_equation_tag(t['tex'])
         body = math_tex(body)
-        if atom['kind'] != 'math' and r'\usepackage{book-style}' in preamble:
+        display = atom['kind'] != 'math' or bool(tags)
+        if display and r'\usepackage{book-style}' in preamble:
             body = r'\BookMath[' + ('48pt' if tag else '0pt') + ']{' + body + '}'
-        fragment = ('$' + body + '$') if atom['kind'] == 'math' else (
+        fragment = ('$' + body + '$') if not display else (
             r'\begin{equation*}' + body + tag + r'\end{equation*}')
         self.check_fragment(project, atom, fragment)
 

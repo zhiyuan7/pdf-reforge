@@ -23,6 +23,8 @@ ESCAPES = {"\\": r"\textbackslash{}", "&": r"\&", "%": r"\%", "$": r"\$", "#": r
 
 
 def literal_text(text):
+    # PDF extraction may detach the combining negation slash from its equals.
+    text = re.sub('\u0338'+r'\s*=', '≠', text)
     return "".join(unicode_symbol(c) or ESCAPES.get(c, c) if ord(c) >= 32 or c == "\n" else "" for c in text)
 
 
@@ -45,6 +47,9 @@ def unicode_symbol(char, math=False):
     # Circled footnote markers occur inside superscripts as well as ordinary text.
     # NewTX's OT1 math text font cannot represent these Unicode characters.
     code = ord(char)
+    symbols={'∈':r'\in','∉':r'\notin','≠':r'\neq','ℝ':r'\mathbb{R}'}
+    if char in symbols:
+        return symbols[char] if math else r'\ensuremath{'+symbols[char]+'}'
     if char in '◀▶':
         symbol = r'\blacktriangleleft' if char == '◀' else r'\blacktriangleright'
         return symbol if math else r'\ensuremath{' + symbol + '}'
@@ -396,9 +401,13 @@ class Renderer:
             if evidence:
                 self.tex_compatibility.append({'atom':atom['id'],'original':content,'rendered':compatible,'evidence':evidence})
             content=compatible
-        if atom["kind"] == "math":
+        numbered_inline = atom['kind']=='math' and bool(formula_tags(content))
+        if numbered_inline:
+            self.tex_compatibility.append(dict(atom=atom['id'],original=content,rendered=content,
+                evidence=['numbered equation in an inline source node rendered in display math; original equation number retained']))
+        if atom["kind"] == "math" and not numbered_inline:
             return "% source-atom: " + atom["id"] + "\n\\allowbreak $" + math_tex(content) + "$%\n% end-source-atom: " + atom["id"] + "\n"
-        if atom["kind"] == "display_math":
+        if atom["kind"] == "display_math" or numbered_inline:
             tex = math_tex(content)
             tags = formula_tags(tex)
             image_reason = 'multiple equation tags' if len(tags) > 1 else None
@@ -409,7 +418,19 @@ class Renderer:
                 # number, or duplicate part of the right-hand number. Neither
                 # label can safely be discarded without inspecting the source.
                 if not atom.get('asset'):
-                    raise ValueError('Formula has ' + image_reason + ' but no source image: ' + atom['id'])
+                    import pymupdf
+                    box = atom.get('bbox') or atom.get('block_bbox')
+                    if (not isinstance(box,(list,tuple)) or len(box)!=4 or
+                            not 0<=box[0]<box[2]<=1 or not 0<=box[1]<box[3]<=1):
+                        raise ValueError('Formula has ' + image_reason + ' but no source image: ' + atom['id'])
+                    path = self.directory/'source_formula_images'/(atom['id']+'.png')
+                    path.parent.mkdir(parents=True,exist_ok=True)
+                    with pymupdf.open(self.index.source['source_pdf']) as source:
+                        page = source[atom['page']]
+                        clip = pymupdf.Rect(box[0]*page.rect.width,box[1]*page.rect.height,
+                                            box[2]*page.rect.width,box[3]*page.rect.height)
+                        page.get_pixmap(dpi=220,clip=clip,alpha=False).save(path)
+                    atom = {**atom,'asset':str(path)}
                 rendered = self.image_tex(atom)
                 self.tex_compatibility.append({'atom': atom['id'], 'original': content, 'rendered': rendered,
                     'evidence': [image_reason + ' preserved using the original formula image; no label or mathematical content discarded']})

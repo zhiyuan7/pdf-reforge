@@ -149,6 +149,8 @@ def read_catalog(index, metadata, client, config, directory, progress=lambda *ar
             raise ValueError('TOC hierarchy skips a parent: '+e['title'])
         e['parent_id'] = stack[-1]['id'] if stack else None
         stack.append(e)
+    from book_pipeline.ingestion.translation import translate_catalog
+    entries = translate_catalog(entries, index.source, client)
     save(directory / 'toc_catalog.json', {'method':METHOD, 'physical_pages':pages,
                                          'entries':entries, 'input_sha256':index.source['input_sha256'],
                                          'mineru_sha256':index.source['mineru_sha256'], 'catalog_fingerprint':fingerprint(entries)})

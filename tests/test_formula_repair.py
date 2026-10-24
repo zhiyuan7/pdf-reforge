@@ -14,7 +14,7 @@ from book_pipeline.config import executable, read
 from book_pipeline.ingestion.math_syntax import compatible_equation_tag
 from book_pipeline.ingestion.source import SourceIndex
 from book_pipeline.publishing.formula_repair import FormulaRepairer, compile_with_formula_recovery, locate_formula_errors
-from book_pipeline.publishing.latex import Renderer, table_tex
+from book_pipeline.publishing.latex import Renderer, table_tex, escape
 
 
 CONFIG = dict(model='test-model', base_url='https://example.invalid', api_key_env='TEST_KEY',
@@ -30,6 +30,10 @@ def index(content=r'\logit(p)', kind='display_math', asset=None):
 
 
 class FormulaCompatibilityTests(unittest.TestCase):
+    def test_unicode_membership_and_detached_negation_render_with_math_glyphs(self):
+        output=escape('x ∈ ℝ; trace[ABC]̸ = trace[BAC]')
+        for value in [r'\in',r'\mathbb{R}',r'\neq']:self.assertIn(value,output)
+        self.assertNotIn('\u0338',output)
     def test_math_number_is_wrapped_and_existing_forms_are_unchanged(self):
         tag = r'\tag{*_{1}}'
         fixed = r'\tag{\ensuremath{*_{1}}}'
@@ -51,6 +55,16 @@ class FormulaCompatibilityTests(unittest.TestCase):
         self.assertNotIn('BookImage', output)
         self.assertEqual(source.source, before)
 
+    def test_numbered_equation_in_inline_source_is_rendered_as_display_math(self):
+        source=index(r'x=1\tag{19.10}',kind='math')
+        decisions=dict(objects=[],exclusions=[],corrections=[],joins=[],bold_spans=[],page_footnotes=[])
+        with tempfile.TemporaryDirectory() as folder:
+            renderer=Renderer(source,decisions,[],[],Path(folder))
+            output=renderer.content_fragment(source.atoms[0],0,source.atoms[0]['length'],False)
+        self.assertIn(r'\begin{equation*}',output)
+        self.assertIn(r'\tag{19.10}',output)
+        self.assertNotIn(r'\allowbreak $',output)
+
     def test_render_only_replacement_keeps_source_offsets_and_content(self):
         source = index()
         before = deepcopy(source.source)
@@ -62,6 +76,21 @@ class FormulaCompatibilityTests(unittest.TestCase):
         self.assertIn(r'\operatorname{logit}', output)
         self.assertEqual(source.source, before)
         self.assertEqual(source.prefix[-1], len(r'\logit(p)'))
+
+    def test_native_multitag_formula_uses_its_original_page_crop(self):
+        import pymupdf
+        with tempfile.TemporaryDirectory() as folder:
+            root=Path(folder);pdf=root/'original.pdf'
+            with pymupdf.open() as document:
+                document.new_page().insert_text((70,100),'x=1 (1)   y=2 (2)');document.save(pdf)
+            source=index(r'x=1\tag{1} y=2\tag{2}');source.source['source_pdf']=str(pdf)
+            before=deepcopy(source.source)
+            decisions=dict(objects=[],exclusions=[],corrections=[],joins=[],bold_spans=[],page_footnotes=[])
+            renderer=Renderer(source,decisions,[],[],root)
+            output=renderer.content_fragment(source.atoms[0],0,source.atoms[0]['length'],False)
+            self.assertIn('BookImage',output)
+            self.assertTrue((root/'source_formula_images/edited-000001.png').exists())
+            self.assertEqual(source.source,before)
 
     def test_error_mapping_does_not_guess_from_adjacent_prose_or_outside_paths(self):
         with tempfile.TemporaryDirectory() as name:
@@ -75,6 +104,14 @@ class FormulaCompatibilityTests(unittest.TestCase):
             self.assertEqual([a['id'] for a,e in matches], ['edited-000001'])
             errors['error_details'] = errors['error_details'][1:]
             self.assertEqual(locate_formula_errors(root, errors, index().atoms), [])
+
+    def test_unclosed_source_math_group_is_located_at_the_following_paragraph(self):
+        with tempfile.TemporaryDirectory() as folder:
+            root=Path(folder)
+            (root/'chapter.tex').write_text('% source-atom: edited-000001\n'+
+                r'$\text{create }2^D\text{ $'+'\n% end-source-atom: edited-000001\n\n')
+            errors=dict(error_details=[dict(file='chapter.tex',line=4,message='Paragraph ended before text was complete')])
+            self.assertEqual([a['id'] for a,e in locate_formula_errors(root,errors,index().atoms)],['edited-000001'])
 
     def test_malformed_math_cell_preserves_table_image_instead_of_broken_tex(self):
         valid='<table><tr><td><eq>x_i</eq></td><td>10</td></tr></table>'

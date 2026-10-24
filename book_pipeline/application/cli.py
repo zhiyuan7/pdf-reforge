@@ -10,7 +10,10 @@ from book_pipeline.config import ROOT, load_config, read
 def main(argv=None):
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--pdf', type=Path, help='原始 PDF；使用 --mineru-dir 时可从识别清单读取')
-    parser.add_argument('--mineru-dir', type=Path, help='复用完整的 MinerU 识别结果，不重新识别')
+    parser.add_argument('--input-mode', choices=['auto', 'ocr'], help='逐页自动分流（默认）或强制 OCR')
+    parser.add_argument('--translation', choices=['auto', 'off'], help='自动将英文翻译为中文（默认）或保留原文')
+    parser.add_argument('--source-dir', '--mineru-dir', dest='mineru_dir', type=Path,
+                        help='复用完整的原始/校正/翻译提取目录或 MinerU 结果')
     parser.add_argument('--metadata', type=Path, help='书名、作者等 YAML 配置，默认与 PDF 同名的 .book.yaml')
     parser.add_argument('--config', type=Path, default=ROOT / 'book_config.json')
     parser.add_argument('-o', '--output', type=Path, help='独立输出目录，默认 output/<PDF 文件名>')
@@ -32,6 +35,8 @@ def main(argv=None):
     args = parser.parse_args(argv)
     try:
         config = load_config(args.config)
+        if args.input_mode: config['input_mode'] = args.input_mode
+        if args.translation: config['translation'] = args.translation
         if args.check or args.check_local:
             from book_pipeline.publishing.environment import doctor
             result = {'status': 'complete', 'tools': doctor(config, require_key=args.check)}
@@ -53,6 +58,8 @@ def main(argv=None):
                     parser.error('单独运行阶段时需要 --mineru-dir')
                 index = load_book(args.pdf, args.mineru_dir, args.formula_corrections)
                 if args.correct_formulas:
+                    if index.source.get('translation'):
+                        parser.error('请先对原始提取来源校正公式，再翻译；不能对中文译文重新识别英文正文')
                     if args.formula_corrections:
                         parser.error('--correct-formulas 使用原始 OCR，不能同时提供 --formula-corrections')
                     from book_pipeline.ingestion.formula_bands import correct_formula_bands

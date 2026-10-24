@@ -142,8 +142,13 @@ def validate_answer(answer, band):
             math_tex(normalized_math(latex))
         else:
             raise ValueError('Unknown item kind')
-    if sorted(preserved) != sorted(p['group'] for p in band['preserve']):
-        raise ValueError('Each preserved group must appear exactly once')
+    expected = [p['group'] for p in band['preserve']]
+    if sorted(preserved) != sorted(expected):
+        missing = sorted(set(expected)-set(preserved))
+        duplicates = sorted(g for g in set(preserved) if preserved.count(g)>1)
+        raise ValueError('Each preserved group must appear exactly once. Missing='+str(missing)+
+                         '; duplicated='+str(duplicates)+'. Return {"kind":"preserve","group":ID} '+
+                         'for each missing object at its source position. Do not transcribe its content again, even if it is mathematical.')
     # OCR's equation block may actually contain inline mathematics. The source
     # image, rather than the old block type, determines the corrected type.
 

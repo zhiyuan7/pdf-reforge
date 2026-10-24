@@ -42,5 +42,7 @@
       "input_uncached": 0.15,
       "output": 0.6
     }
-  }
+  },
+  "input_mode": "auto",
+  "translation": "auto"
 }

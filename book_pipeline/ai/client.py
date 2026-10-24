@@ -45,6 +45,7 @@ class DeepSeekClient:
         self.cache.mkdir(parents=True, exist_ok=True)
         self.sleep = sleep
         self.lock = threading.Lock()
+        self.connection_lock = threading.Lock()
         self.transport = transport
         self.capture_responses = capture_responses
         self.calls = self.cache / "usage.jsonl"
@@ -55,6 +56,10 @@ class DeepSeekClient:
         self.shared_caches = [ROOT / p for p in config.get("shared_cache_dirs", [])]
 
     def _connect(self):
+        with self.connection_lock:
+            self._connect_unlocked()
+
+    def _connect_unlocked(self):
         if self._api is None:
             load_environment()
             key = os.environ.get(self.config["api_key_env"])

@@ -103,7 +103,9 @@ def load_source(pdf, mineru_dir, page_spec="all"):
         pages.append({"page": number, "atoms": page_atoms, "size_pt": dimensions[number]})
     return {"source_pdf": str(pdf), "input_sha256": source_hash,
             "mineru_dir": str(mineru_dir), "mineru_sha256": digest(mineru_dir / "middle_json.json"),
-            "source_page_count": count, "selected_pages": chosen, "pages": pages, "atoms": atoms}
+            "source_page_count": count, "selected_pages": chosen, "pages": pages, "atoms": atoms,
+            **({"ingestion_method": manifest["method"]} if manifest.get("method") else {}),
+            **({"translation": manifest["translation"]} if manifest.get("translation") else {})}
 
 
 class SourceIndex:
@@ -202,3 +204,55 @@ def corrected_content(atom, corrections):
     for c in sorted((c for c in corrections if c["atom"] == atom["id"]), key=lambda c: -c["start_offset"]):
         text = text[:c["start_offset"]] + c["replacement"] + text[c["end_offset"]:]
     return text
+
+
+def materialize_source(index, directory):
+    """Persist corrected atoms in the common extraction schema, before translation."""
+    import os
+    import shutil
+    from book_pipeline.config import save
+    directory = Path(directory).resolve()
+    origin = Path(index.source['mineru_dir']).resolve()
+    if directory == origin or directory.is_relative_to(origin):
+        raise ValueError('Corrected source needs a separate directory')
+    directory.mkdir(parents=True, exist_ok=True)
+    stamp = index.source['mineru_sha256']
+    manifest_path = directory / 'manifest.json'
+    if manifest_path.exists():
+        manifest = read(manifest_path)
+        if manifest.get('corrected_source_sha256') != stamp:
+            raise ValueError('Corrected source cache does not match current corrections')
+        if manifest.get('middle_sha256') != digest(directory / 'middle_json.json'):
+            raise ValueError('Corrected source cache changed')
+        return directory
+    pages = {page['page']: dict(page_idx=page['page'], blocks=[]) for page in index.source['pages']}
+    for positions in index.groups.values():
+        first = index.atoms[positions[0]]
+        nodes = []
+        for pos in positions:
+            atom = index.atoms[pos]
+            kind = {'math':'equation_inline', 'display_math':'equation', 'image':'image_body',
+                    'table':'table_body'}.get(atom['kind'], atom['role'])
+            if kind == first['block_type'] and kind not in {'equation', 'image_body', 'table_body'}:
+                kind = 'text'
+            node = dict(type=kind, content=atom['content'], bbox=atom.get('bbox'))
+            if atom.get('asset'):
+                asset = Path(atom['asset'])
+                relative = asset.relative_to(origin)
+                target = directory / 'assets' / relative
+                target.parent.mkdir(parents=True, exist_ok=True)
+                if not target.exists():
+                    try: os.link(asset, target)
+                    except OSError: shutil.copy2(asset, target)
+                node['image_path'] = str(target.relative_to(directory))
+            nodes.append(node)
+        page = pages[first['page']]
+        page['blocks'].append(dict(index=len(page['blocks']), type=first['block_type'],
+                                   bbox=first.get('block_bbox'), level=first.get('level_hint'), content=nodes))
+    save(directory / 'middle_json.json', dict(schema='docvortex.middle', schema_version='2.0',
+         is_full_document=True, pages=list(pages.values())))
+    manifest = read(origin / 'manifest.json')
+    save(manifest_path, {**manifest, 'corrected_source_sha256':stamp,
+                        'formula_corrections':index.source.get('formula_corrections'),
+                        'middle_sha256':digest(directory / 'middle_json.json')})
+    return directory

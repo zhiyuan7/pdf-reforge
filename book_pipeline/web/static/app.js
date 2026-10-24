@@ -113,7 +113,7 @@ function showView(history) {
 }
 
 function renderStages() {
-  const stages = state.job?.stages || ['MinerU 识别', '标题匹配', '正文整理', '引用映射', '整书排版'].map((label) => ({ label, status: 'pending' }));
+  const stages = state.job?.stages || ['提取与翻译', '标题匹配', '正文整理', '引用映射', '整书排版'].map((label) => ({ label, status: 'pending' }));
   $('stage-count').textContent = `${stages.filter((s) => s.status === 'complete').length} / 5`;
   $('stage-list').innerHTML = stages.map((stage, i) => {
     const symbol = stage.status === 'complete' ? '<i data-lucide="check"></i>' : stage.status === 'interrupted' || (stage.status === 'running' && !state.connected) ? '<i data-lucide="pause"></i>' : stage.status === 'running' ? '<i data-lucide="loader-circle" class="spin"></i>' : stage.status === 'failed' ? '<i data-lucide="x"></i>' : String(i + 1).padStart(2, '0');

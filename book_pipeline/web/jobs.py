@@ -3,14 +3,11 @@ from concurrent.futures import ThreadPoolExecutor
 from copy import deepcopy
 from datetime import datetime, timezone
 from pathlib import Path
-import os
 import shutil
-import subprocess
 import threading
-import time
 import uuid
 
-from book_pipeline.application.pipeline import load_book, match_headings, process_content
+from book_pipeline.application.pipeline import load_book, match_headings, process_content, prepare_book_source
 from book_pipeline.ai.client import DeepSeekClient
 from book_pipeline.config import ROOT, digest, read, save
 from book_pipeline.publishing.colors import COLOR_KINDS, DEFAULT_COLORS, validate_colors
@@ -31,7 +28,7 @@ from book_pipeline.structure.rule_mapping import run_rule_mapping
 from book_pipeline.structure.semantics import LABELS
 from pipeline_progress import MinerUProgress
 
-STAGES = [('mineru', 'MinerU 识别'), ('headings', '标题匹配'), ('content', '正文整理'),
+STAGES = [('mineru', '提取与翻译'), ('headings', '标题匹配'), ('content', '正文整理'),
           ('references', '引用映射'), ('render', '整书排版')]
 ACTIVE = {'queued', 'processing', 'rendering', 'extracting'}
 PHASES = {'footnote-matching': '同页脚注标号匹配', 'subheading-continuity': '小标题编号连续性复核',
@@ -387,61 +384,15 @@ class JobStore:
         pdf = Path(job['pdf'])
         self.stage(identifier, 'mineru', detail='检查识别结果', done=None, unit='',
                    source_total=job['source_pages'], completed_pages=0, window=None)
-        sha = digest(pdf)
-        mineru = Path(job.get('mineru') or self.directory / identifier / 'mineru')
-        # Only reuse a complete result for the identical uploaded PDF.
-        for path in (ROOT / 'output').rglob('manifest.json'):
-            try:
-                manifest = read(path)
-                if manifest.get('input_sha256') == sha and (path.parent / 'middle_json.json').is_file():
-                    load_book(pdf, path.parent)
-                    mineru = path.parent
-                    break
-            except (OSError, ValueError, KeyError):
-                continue
+        root = self.directory / identifier
+        source_directory = job.get('mineru')
+        # Existing jobs can resume their validated source; new jobs auto-route pages.
+        mineru = prepare_book_source(pdf, source_directory, self.config, root,
+                                    self.progress(identifier, 'mineru'))
         self.update(identifier, mineru=str(mineru))
-        try:
-            load_book(pdf, mineru)
-            complete = True
-        except (OSError, ValueError, KeyError):
-            complete = False
-        if not complete:
-            python = Path(self.config['mineru_python']).expanduser()
-            if not python.is_absolute():
-                python = ROOT / python
-            command = [str(python), str(ROOT / 'run_mineru.py'), str(pdf), '-o', str(mineru), '--pages', 'all',
-                       '--tier', self.config['mineru_tier'], '--ocr-mode', self.config['mineru_ocr_mode'],
-                       '--model-source', self.config['mineru_model_source'],
-                       '--checkpoint-dir', str(self.directory / identifier / 'mineru_cache')]
-            self.stage(identifier, 'mineru', detail='加载模型并识别', done=None, unit='')
-            progress = MinerUProgress(job['source_pages'])
-            last_update, last_phase = 0, None
-            with (self.directory / identifier / 'mineru.log').open('a', encoding='utf-8') as log:
-                with subprocess.Popen(command, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True,
-                                      env={**os.environ, 'PDF_PIPELINE_PROGRESS': '1'}) as process:
-                    for line in process.stdout:
-                        log.write(line)
-                        log.flush()
-                        event = progress.consume(line)
-                        if event:
-                            current = time.monotonic()
-                            phase = (event['detail'], event['window'], event['total'])
-                            if phase != last_phase or current - last_update >= .25 or event['done'] == event['total']:
-                                self.stage(identifier, 'mineru', **event)
-                                last_update, last_phase = current, phase
-                    returncode = process.wait()
-                    if returncode in {-2, -15, 130, 143}:
-                        raise InterruptedError('MinerU 识别已中断，上传文件和已保存结果仍保留。')
-                    if returncode:
-                        raise RuntimeError('MinerU 识别失败，运行记录保存在本书稿的 mineru.log 中。')
         index = load_book(pdf, mineru)
-        from book_pipeline.ingestion.formula_bands import correct_formula_bands, apply_formula_corrections
-        formula_directory = self.directory / identifier / 'formula_corrections'
-        correction = correct_formula_bands(index, self.config, formula_directory, self.progress(identifier, 'mineru'))
-        index = apply_formula_corrections(index, correction)
-        self.update(identifier, formula_corrections=str(formula_directory / 'formula_corrections.json'),
-                    formula_correction_statistics=dict(regions=len(correction['records']), usage=correction['usage']))
-        self.stage(identifier, 'mineru', 'complete', '识别与公式校正完成', job['source_pages'], job['source_pages'],
+        self.update(identifier, formula_corrections=None)
+        self.stage(identifier, 'mineru', 'complete', '提取、翻译与公式校正完成', job['source_pages'], job['source_pages'],
                    unit='页', completed_pages=job['source_pages'], source_total=job['source_pages'], window=None)
         headings, content = Path(job['headings']), Path(job['content'])
         self.stage(identifier, 'headings', detail='读取目录并匹配标题')
