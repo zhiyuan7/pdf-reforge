@@ -17,12 +17,34 @@
 \setcounter{secnumdepth}{-1}
 \let\cleardoublepage\clearpage
 \xeCJKDeclareCharClass{CJK}{"2460 -> "24FF,"25A0 -> "25FF}
+% English quotes use the surrounding Latin font and ordinary word boundaries.
+% Local assignments preserve Chinese punctuation classes after each glyph.
+\newcommand{\BookLatinQuote}[1]{\begingroup
+ \XeTeXcharclass"2018=0 \XeTeXcharclass"2019=0
+ \XeTeXcharclass"201C=0 \XeTeXcharclass"201D=0 #1\endgroup}
+\pdfstringdefDisableCommands{\def\BookLatinQuote#1{#1}}
 \AtBeginDocument{\fontsize{10.5pt}{16.4pt}\selectfont\setlength{\parindent}{2\ccwd}}
 \setlength{\parskip}{0pt}
+% Source labels appear once in the margin; list bodies share one left edge.
+\newlength{\BookListLabelWidth}
+\newcommand{\BookListSetup}[2]{%
+ \settowidth{\BookListLabelWidth}{#2}%
+ \setlength{\labelwidth}{\BookListLabelWidth}\setlength{\labelsep}{.4em}%
+ \setlength{\leftmargin}{\dimexpr#1em+\labelwidth+\labelsep\relax}%
+ \setlength{\rightmargin}{0pt}\setlength{\itemindent}{0pt}%
+ \setlength{\listparindent}{0pt}\setlength{\topsep}{0pt}%
+ \setlength{\partopsep}{0pt}\setlength{\parsep}{0pt}\setlength{\itemsep}{0pt}}
+\newcommand{\BookListBegin}[2]{%
+ \begin{list}{#2}{\BookListSetup{#1}{#2}}\item\relax}
+\newcommand{\BookListContinuationBegin}[2]{%
+ \begin{list}{}{\BookListSetup{#1}{#2}}\item\relax}
+\newcommand{\BookListEnd}{\end{list}}
 \AtBeginDocument{\tolerance=9999\emergencystretch=6em}
 \raggedbottom
 \clubpenalty=10000
 \widowpenalty=10000
+% TeX uses a separate widow penalty for the final prose line before a display.
+\displaywidowpenalty=10000
 \newsavebox{\BookMathBox}
 \newdimen\BookMathWidth
 \NewDocumentCommand{\BookMath}{O{0pt} m}{%
@@ -92,12 +114,12 @@
   \ifnum#1<3\relax\vspace{12pt}\else\ifnum#1<5\relax\vspace{6pt}\else\vspace{3pt}\fi\fi
  \fi}
 \tcbset{bookcommon/.style={enhanced,breakable,fontupper=\normalfont,
-  coltitle=white,fonttitle=\sffamily\heiti\bfseries,boxrule=0.5pt,arc=1pt,left=6pt,right=6pt,
-  top=6pt,bottom=6pt,before skip=9pt,after skip=9pt,
+  coltitle=white,fonttitle=\sffamily\heiti\bfseries,boxrule=0.45pt,arc=4pt,outer arc=4pt,left=8pt,right=8pt,
+  top=8pt,bottom=7pt,before skip=10pt,after skip=10pt,
   title after break={\textnormal{（续）}},
-  attach boxed title to top left={xshift=6pt,yshift=-2pt},
+  attach boxed title to top left={xshift=8pt,yshift=-2pt},
   varwidth boxed title*=-18pt,
-  boxed title style={boxrule=0pt,arc=0pt},
+  boxed title style={boxrule=0pt,arc=3pt,outer arc=3pt,left=6pt,right=6pt,top=3pt,bottom=3pt},
   overlay last={\node[anchor=south east,inner sep=3pt,font=\tiny] at (frame.south east) {\textcolor{gray}{\ensuremath{\square}}};}},
   bookgreen/.style={bookcommon,colframe=main,colback=main!5,colbacktitle=main},
   bookorange/.style={bookcommon,colframe=second,colback=second!5,colbacktitle=second},
@@ -115,14 +137,109 @@
 \newenvironment{BookSubheading}[1]{\par\Needspace{4\baselineskip}\vspace{7pt}\begingroup
  \color{structurecolor}\BookSubheadingLatinFont\heiti\bfseries\boldmath\fontsize{#1pt}{\dimexpr #1pt*14/10\relax}\selectfont\noindent}{\par\endgroup\vspace{4pt}}
 \newenvironment{BookBodySample}[1]{\par\normalfont}{\par}
-\newtcolorbox{BookExample}[2][]{enhanced,breakable,colback=white,colframe=white,
-  boxrule=0pt,sharp corners,left=0pt,right=0pt,top=4pt,bottom=4pt,
-  borderline north={0.5pt}{0pt}{BookExampleInk},borderline south={2pt}{0pt}{BookExampleInk},
-  title={#2},coltitle=BookExampleInk,colbacktitle=white,fonttitle=\sffamily\heiti\bfseries,titlerule=0pt,
+\newtcolorbox{BookExample}[2][]{enhanced,breakable,colback=BookExampleInk!2,colframe=BookExampleInk!55,
+  boxrule=0.45pt,arc=4pt,outer arc=4pt,left=8pt,right=8pt,top=6pt,bottom=6pt,
+  title={#2},coltitle=BookExampleInk,colbacktitle=BookExampleInk!6,fonttitle=\sffamily\heiti\bfseries,titlerule=0pt,
   before skip=10pt,after skip=10pt,title after break={（例题续）},#1}
 \newtcolorbox{BookRemark}[2][]{enhanced,breakable,colback=gray!10,colframe=gray!10,
-  boxrule=0pt,left=5pt,right=5pt,top=4pt,bottom=4pt,before skip=6pt,after skip=6pt,
+  boxrule=0pt,arc=4pt,outer arc=4pt,left=8pt,right=8pt,top=5pt,bottom=5pt,before skip=7pt,after skip=7pt,
   before upper={\BookCaptionFont\if\relax\detokenize{#2}\relax\else\textbf{#2}\par\fi},#1}
+% Geometrically evidenced source panels do not invent semantic declarations.
+\newtcolorbox{BookSourcePanel}[3][]{enhanced,breakable,fontupper=\normalfont,
+  colframe=#3!80!black,colback=#3!5,colbacktitle=#3!18,coltitle=black,
+  fonttitle=\sffamily\heiti\bfseries,title={#2},boxrule=0.45pt,arc=4pt,outer arc=4pt,
+  left=8pt,right=8pt,top=8pt,bottom=7pt,before skip=10pt,after skip=10pt,
+  title after break={（续）},#1}
+% Short adjacent prose/note pairs retain both source ownership and lateral order.
+\newsavebox{\BookSideFirst}
+\newsavebox{\BookSideSecond}
+\newdimen\BookSideWidth
+\newenvironment{BookSideBySide}[3]{\par\addvspace{10pt}\begingroup
+  \edef\BookSideIndent{\the\parindent}\BookSideWidth=\linewidth
+  \def\BookSideSecondWidth{#2}\def\BookSideFirstLeft{#3}
+  \begin{lrbox}{\BookSideFirst}\begin{minipage}[t]{#1\BookSideWidth}
+  \setlength{\parindent}{\BookSideIndent}\vspace{0pt}}
+ {\par\end{minipage}\end{lrbox}\noindent
+  \ifnum\BookSideFirstLeft=1
+    \usebox{\BookSideFirst}\hfill\usebox{\BookSideSecond}%
+  \else\usebox{\BookSideSecond}\hfill\usebox{\BookSideFirst}\fi
+  \par\prevdepth=-1000pt\vskip10pt\endgroup}
+\newcommand{\BookSideSwitch}{\par\end{minipage}\end{lrbox}%
+  \begin{lrbox}{\BookSideSecond}\begin{minipage}[t]{\BookSideSecondWidth\BookSideWidth}
+  \setlength{\parindent}{\BookSideIndent}\vspace{0pt}}
+% Bounded source paragraphs can regain full width below a short note.
+% Capture each side once: destinations stay inside the box actually shipped.
+\newsavebox{\BookWrapNoteBox}
+\newsavebox{\BookWrapMainBox}
+\newdimen\BookWrapTotalWidth
+\newdimen\BookWrapNoteWidth
+\newdimen\BookWrapShortWidth
+\newdimen\BookWrapInset
+\newcount\BookWrapLines
+\newcount\BookWrapLoop
+\NewDocumentEnvironment{BookWrappedPair}{m m m m +b}
+ {\BookWrapSplit{#1}{#2}{#3}{#4}#5\BookWrapStop}{}
+\long\def\BookWrapSplit#1#2#3#4#5\BookWrapSwitch#6\BookWrapStop{%
+ \par\addvspace{10pt}\begingroup
+ \edef\BookWrapIndent{\the\parindent}\BookWrapTotalWidth=\linewidth
+ \BookWrapNoteWidth=#1\BookWrapTotalWidth
+ \BookWrapInset=\dimexpr\BookWrapNoteWidth+#2\BookWrapTotalWidth\relax
+ \BookWrapShortWidth=\dimexpr\BookWrapTotalWidth-\BookWrapInset\relax
+ \ifnum#4=1 \long\def\BookWrapMain{#5}\long\def\BookWrapNote{#6}%
+ \else\long\def\BookWrapMain{#6}\long\def\BookWrapNote{#5}\fi
+ \begin{lrbox}{\BookWrapNoteBox}\begin{minipage}[t]{\BookWrapNoteWidth}%
+  \setlength{\parindent}{\BookWrapIndent}\vspace{0pt}\BookWrapNote\par
+ \end{minipage}\end{lrbox}%
+ % Reserve enough complete baselines for the actual typeset rounded panel.
+ \BookWrapLines=\numexpr\dimexpr\ht\BookWrapNoteBox+\dp\BookWrapNoteBox+2pt\relax/\baselineskip\relax
+ \ifdim\dimexpr\BookWrapLines\baselineskip\relax<\dimexpr\ht\BookWrapNoteBox+\dp\BookWrapNoteBox+2pt\relax
+  \advance\BookWrapLines by1 \fi
+ \def\BookWrapShape{}\BookWrapLoop=0
+ \loop\ifnum\BookWrapLoop<\BookWrapLines
+  \ifnum#3=1 \edef\BookWrapShape{\BookWrapShape\the\BookWrapInset\space\the\BookWrapShortWidth\space}%
+  \else\edef\BookWrapShape{\BookWrapShape0pt \the\BookWrapShortWidth\space}\fi
+  \advance\BookWrapLoop by1
+ \repeat
+ \begin{lrbox}{\BookWrapMainBox}\begin{minipage}[t]{\BookWrapTotalWidth}%
+  \setlength{\parindent}{\BookWrapIndent}\vspace{0pt}%
+  \parshape\numexpr\BookWrapLines+1\relax\BookWrapShape0pt \the\BookWrapTotalWidth\relax
+  \BookWrapMain\par
+ \end{minipage}\end{lrbox}%
+ \noindent\hbox to\BookWrapTotalWidth{%
+  \ifnum#3=1 \rlap{\usebox{\BookWrapNoteBox}}%
+  \else\rlap{\hspace{\dimexpr\BookWrapTotalWidth-\BookWrapNoteWidth\relax}\usebox{\BookWrapNoteBox}}\fi
+  \usebox{\BookWrapMainBox}\hss}%
+ \par\prevdepth=-1000pt\vskip10pt\endgroup}
+% The source mark and its destination stay together inside the owning box.
+\newcommand{\BookPanelEndMark}[2]{\par\nobreak\nointerlineskip
+  \hbox to\linewidth{\hfill{\color[rgb]{#1}\mbox{#2}}}\par}
+% Permit a full final line to move the mark onto its own right-aligned line.
+\newcommand{\BookTerminalMark}[1]{\unskip\nobreak\hfill\penalty50
+  \hskip1em\null\nobreak\hfill\mbox{#1}\par}
+\newcommand{\BookSourceRule}[2]{\par\nobreak\vskip6pt
+  {\color[rgb]{#2}\hrule height #1pt\relax}\nobreak\vskip8pt}
+\newcommand{\BookSourceRuleBefore}[2]{\par\addvspace{10pt}
+  {\color[rgb]{#2}\hrule height #1pt\relax}\nobreak\vskip6pt}
+% Small source QR notes belong to the citation's line, including after a page
+% break. Keep their original labels and use the physical outside margin.
+\setlength{\marginparwidth}{26bp}
+\setlength{\marginparsep}{4bp}
+\newcommand{\BookMarginAsset}[2]{\begingroup
+  \marginpar{\centering\normalfont\scriptsize #1\par\vspace{2bp}#2}%
+  \endgroup}
+% Reset the font strut too: assigning baselineskip alone leaves amsmath's
+% aligned rows stretched by the surrounding prose's leading.
+\newcommand{\BookMathCellSetup}{\linespread{1}\fontsize{\f@size}{1.2em}\selectfont}
+% Only geometrically bounded short source units use this indivisible box.
+% Keep the surrounding paragraph indent; minipage normally resets it to zero.
+\newdimen\BookDisplayUnitDepth
+\newenvironment{BookDisplayUnit}{\par\begingroup
+ \edef\BookDisplayUnitIndent{\the\parindent}\noindent
+ \begin{minipage}[t]{\linewidth}\setlength{\parindent}{\BookDisplayUnitIndent}}
+ {\par\global\BookDisplayUnitDepth=\prevdepth\end{minipage}\par
+  % A top-aligned minipage has a large depth. Restore its last line's actual
+  % depth so TeX uses normal leading before the following prose paragraph.
+  \prevdepth=\BookDisplayUnitDepth\endgroup}
 \newenvironment{BookProof}[1]{\par\noindent\textbf{\color{second}#1}\quad}{\par}
 \newenvironment{BookSolution}[1]{\par\noindent\textbf{#1}\quad}{\par}
 \newenvironment{BookExercise}[1]{\par\noindent\textbf{#1}\quad}{\par}
@@ -172,7 +289,13 @@
  \footnotetext[0]{\BookFootnoteFont\hypertarget{#1}{}#2}\endgroup}
 \newenvironment{BookBibliography}[1]{\par\noindent\if\relax\detokenize{#1}\relax\else #1\quad\fi}{\par}
 \newcommand{\BookCaption}[1]{\par\begingroup\BookCaptionFont\centering\noindent #1\par\endgroup}
+% Long source captions are paragraphs even when their asset is centered.
+\newcommand{\BookCaptionParagraph}[1]{\par\begingroup\BookCaptionFont
+ \leftskip=0pt\rightskip=0pt\parfillskip=0pt plus 1fil\parindent=0pt
+ \noindent #1\par\endgroup}
 \newcommand{\BookImage}[2][\linewidth]{\par\noindent\makebox[\linewidth][c]{\includegraphics[width=#1,height=0.65\textheight,keepaspectratio]{#2}}\par}
+% Formula-crop destinations belong inside the image, never an empty paragraph.
+\newcommand{\BookFormulaImage}[3][\linewidth]{\par\noindent\makebox[\linewidth][c]{#3\includegraphics[width=#1,height=0.65\textheight,keepaspectratio]{#2}}\par}
 % Deferred assets may occupy the next page top while later paragraphs fill this page.
 \setcounter{topnumber}{8}\setcounter{totalnumber}{8}
 \renewcommand{\topfraction}{0.95}\renewcommand{\textfraction}{0.05}

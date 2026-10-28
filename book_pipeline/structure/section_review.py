@@ -92,9 +92,20 @@ def split_source(index, outline):
         if len(fragments) > 1:
             split_groups.append({'group': group, 'blocks': fragments,
                                  'headings': [b['heading'] for b in blocks[-len(fragments):] if b['heading']]})
-    excluded_pages = {e['toc_page'] for e in outline.get('toc_entries', [])}
+    excluded_pages = {e['toc_page'] for e in outline.get('toc_entries', []) if e.get('toc_page') is not None}
     excluded_pages.update(outline.get('metadata_config', {}).get('exclude_pages', []))
     sections = []
+    first_start = index.position(headings[0]['start']) if headings else index.prefix[-1]
+    prefix = [b for b in blocks if b['hi'] <= first_start and b['page'] not in excluded_pages]
+    if prefix:
+        # An anonymous processing scope owns prose before the first heading,
+        # or all prose in a heading-free excerpt. It never becomes a PDF title.
+        implicit = dict(toc_id='source-preamble', kind='section', number='', title='正文',
+                        heading_level=3, toc_category='body', toc_parent_id=None, implicit=True)
+        sections.append(dict(id='source-preamble', heading=implicit, next_heading=headings[0] if headings else None,
+                             lo=0, body_lo=0, hi=first_start, pages=[1,index.source['source_page_count']],
+                             blocks=[b['b'] for b in prefix], text_characters=sum(len(b['text']) for b in prefix),
+                             nonempty=any(b['text'].strip() for b in prefix), exercise_context=False, exercise_root=None))
     for n, h in enumerate(headings):
         start, body_start = index.span(h)
         following = headings[n+1] if n+1 < len(headings) else None

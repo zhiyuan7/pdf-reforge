@@ -1,0 +1,183 @@
+{
+  "version": 1,
+  "supplement_to": "initial-math-ai",
+  "status": "supplemental_validation_not_new_batch",
+  "books": [
+    {
+      "id": "fudan-analysis-3e",
+      "work_id": "chen-yu-jin-mathematical-analysis",
+      "title": "数学分析 第三版（上册，复旦公开11页扫描节选）",
+      "author": "陈纪修、於崇华、金路",
+      "language": "zh",
+      "topic": "mathematical_analysis",
+      "url": "https://jwc.fudan.edu.cn/_upload/article/files/4b/39/489071da4c2a9f56492ae9ecfc59/55115477-37d6-4c25-99ea-67be6f26f374.pdf",
+      "source_page": "https://jwc.fudan.edu.cn/17/ed/c39500a464877/page.htm",
+      "rights": "Publicly downloadable university teaching-achievement supporting material. No open redistribution licence found; retain locally, do not redistribute source PDF.",
+      "sha256": "0c13bcda1151c0332a69702a560e60adb73f9813f65e0526b1bebe6ced148015",
+      "source_type": "real_scan",
+      "source_scope": "Entire downloaded file has 11 scanned pages (cover, front matter and opening chapter); full printed book not acquired.",
+      "pages": [
+        10,
+        11
+      ],
+      "variants": [
+        "scan"
+      ],
+      "layout_features": [
+        "modern_horizontal_simplified_chinese",
+        "single_main_column",
+        "photographed_page_skew",
+        "binding_gutter_blur",
+        "neighbor_page_fragments",
+        "paper_tone_and_moire",
+        "display_and_inline_formulas",
+        "numbered_example",
+        "venn_diagrams",
+        "cross_page_paragraph"
+      ],
+      "status": "excerpt_scoped_quality_pass_with_reviewed_overrides",
+      "local_retention": "Full original removed 2026-10-28 after scoped validation. Current reviewed artifacts and minimal excerpts retained; do not automatically redownload."
+    },
+    {
+      "id": "wasserman-all-of-statistics",
+      "work_id": "wasserman-all-of-statistics",
+      "title": "All of Statistics: A Concise Course in Statistical Inference",
+      "author": "Larry Wasserman",
+      "language": "en",
+      "topic": "probability_statistics",
+      "publication": "Springer, 2004; corrected second printing 2005, softcover reprint",
+      "url": "https://sites.santafe.edu/~aaronc/shared/Wasserman_AllOfStatistics_BOOK.pdf",
+      "source_page": "https://sites.santafe.edu/~aaronc/shared/",
+      "author_source": "https://www.stat.cmu.edu/~larry/all-of-statistics/",
+      "rights": "Publicly downloadable faculty-hosted copy, copyright Springer. No open redistribution licence found; local evaluation only, do not redistribute original.",
+      "sha256": "c0d0036787a477f8c1c67282c9e3f20da912aae163bcdaa4dca3d3c118fc1889",
+      "source_type": "real_scan",
+      "source_scope": "Full original 446-page scan downloaded at acquisition, subsequently removed under the 2026-10-28 retention policy; validation covers only physical PDF pages 21–22 (printed pages 4–5). No full-book claim.",
+      "pages": [
+        21,
+        22
+      ],
+      "variants": [
+        "scan"
+      ],
+      "layout_features": [
+        "modern_english_horizontal",
+        "single_column",
+        "full_page_raster_with_inaccurate_ocr_overlay",
+        "light_scan_grain",
+        "slight_page_skew",
+        "dense_inline_and_display_math",
+        "terminology_table",
+        "boxed_definition_with_axioms",
+        "footnote",
+        "cross_page_sets_and_probability_discussion"
+      ],
+      "status": "excerpt_scoped_quality_pass_with_reviewed_overrides",
+      "automatic_typography": "Independent image-only word reading, exact numbered-label ownership and separate local font-family/weight competition recover 25 bold / 16 italic ranges on physical pages21–22. Definition now passes unchanged family and weight thresholds in both pixel views; all previous 40 ranges remain. Remaining numerals, short fragments, footnote and table styles retain source-bound manual review. No full-book automation claim. Remaining numbered labels/table/footnote manually checked on physical21–22; source-bound footnote A italic and sigma-hyphen spacing corrections validated on original and derived unlayered input. Automatic recovery remains incomplete.",
+      "unlayered_derivative_validation": {
+        "source_pages": [
+          21,
+          22
+        ],
+        "input_sha256": "a3e5e9cebcb374bdc364f8a2c20ae7fa774f79e289a5f497793e424bcfd5ae80",
+        "original_budget_sha256": "c0d0036787a477f8c1c67282c9e3f20da912aae163bcdaa4dca3d3c118fc1889",
+        "fresh_cpu_ocr": true,
+        "raw_ocr_byte_equal": true,
+        "reviewed_artifact_pixel_equal": true,
+        "manual_review_revalidated": true,
+        "new_work": false,
+        "evidence": "output/automation/iterations/20261028-080002/verification.json"
+      },
+      "output": "output/benchmark/runs/quality-v198-reviewed-footnote-cpu/results.json",
+      "review": "output/automation/iterations/20261028-210001/review.md",
+      "local_retention": "Full original removed 2026-10-28 after scoped validation. Current reviewed artifacts and minimal excerpts retained; do not automatically redownload."
+    },
+    {
+      "id": "mitchell-machine-learning-1997",
+      "work_id": "mitchell-machine-learning",
+      "title": "Machine Learning",
+      "author": "Tom M. Mitchell",
+      "language": "en",
+      "topic": "machine_learning",
+      "publication": "McGraw-Hill, 1997; ISBN 0070428077",
+      "url": "https://www.cs.cmu.edu/~tom/files/MachineLearningTomMitchell.pdf",
+      "source_page": "https://www.cs.cmu.edu/~tom/mlbook.html",
+      "rights": "Author explicitly offers the full book as a free PDF download. Copyright McGraw-Hill; no open redistribution licence stated. Retain locally for evaluation; do not redistribute source.",
+      "sha256": "2e81d5558ff4fca1014b8b1447ebc2bcfd7720b98c76f4ba8e3410e9bbb3dd7b",
+      "source_type": "real_scan",
+      "source_scope": "Full author-hosted 421-page original downloaded at acquisition, subsequently removed under the 2026-10-28 retention policy. Supplemental evaluation limited to physical PDF pages 70–71 / printed pages 58–59; no full-book claim.",
+      "pages": [
+        70,
+        71
+      ],
+      "variants": [
+        "scan"
+      ],
+      "layout_features": [
+        "modern_english_horizontal",
+        "single_column_continuous_body",
+        "captured_print_scan_with_inaccurate_hidden_ocr",
+        "variable_horizontal_page_alignment",
+        "paper_speckling_and_uneven_ink",
+        "slight_table_line_skew",
+        "dense_inline_and_multiline_display_math",
+        "parallel_decision_tree_illustrations_not_double_column_body",
+        "long_caption",
+        "six_column_fourteen_row_table",
+        "caption_after_table",
+        "cross_page_paragraph_context"
+      ],
+      "status": "excerpt_scoped_quality_pass_with_reviewed_overrides",
+      "preflight": "output/benchmark/preflight/mitchell-machine-learning-cpu-v184",
+      "provenance": "output/automation/iterations/20261028-180002/mitchell-provenance.json",
+      "output": "output/benchmark/runs/modern-scan-v195-detector-array/results.json",
+      "review": "output/automation/iterations/20261028-190001/review.md",
+      "local_retention": "Full original removed 2026-10-28 after scoped validation. Current reviewed artifacts and minimal excerpts retained; do not automatically redownload."
+    },
+    {
+      "id": "bertsekas-tsitsiklis-pdc-full",
+      "work_id": "bertsekas-tsitsiklis-parallel-distributed-computation",
+      "title": "Parallel and Distributed Computation: Numerical Methods",
+      "author": "Dimitri P. Bertsekas; John N. Tsitsiklis",
+      "language": "en",
+      "topic": "numerical_optimization_parallel_algorithms",
+      "publication": "Prentice-Hall 1989; Athena Scientific reprints 1997 / 2015; modern numerical algorithms textbook",
+      "url": "https://web.mit.edu/jnt/www/PDC.pdf",
+      "source_page": "https://web.mit.edu/jnt/www/home.html",
+      "additional_author_source": "https://www.mit.edu/~dimitrib/books.htm",
+      "rights": "Both authors offer the book PDF for free download. Copyright retained; no open redistribution licence identified. Keep original locally for evaluation.",
+      "sha256": "5ae9025e3cdbfcb554bfb04abf8a0b1115ed90e95ec7c227c3f7b4db1f309f8b",
+      "source_type": "real_scan",
+      "source_scope": "Full author-hosted 832-page original retained: PDF1–734 image-only book scan,735–829 native-text solutions manual,830 blank,831–832 image-only scan. Evaluation limited to physical PDF30–31 / printed12–13.",
+      "pages": [
+        30,
+        31
+      ],
+      "variants": [
+        "scan"
+      ],
+      "layout_features": [
+        "modern_english_horizontal",
+        "single_column_continuous_body",
+        "original_image_only_scan_no_hidden_ocr_on_book_pages",
+        "fine_print_speckle",
+        "slight_baseline_skew",
+        "dense_inline_and_display_formulas",
+        "theorem_and_proof_labels",
+        "excerpt_leading_paragraph_continuation"
+      ],
+      "status": "excerpt_artifact_success_quality_failed",
+      "preflight": "output/benchmark/preflight/pdc-unlayered-cpu-v199",
+      "provenance": "output/automation/iterations/20261028-220001/pdc-provenance.json",
+      "output": "output/benchmark/runs/modern-scan-v200-rounding-consensus/results.json",
+      "review": "output/automation/iterations/20261028-220001/review.md",
+      "artifact_success": true,
+      "quality_pass": false,
+      "issues": [
+        "scan_heading_and_statement_proof_typography_missing",
+        "sparse_final_page_proof_continuation"
+      ]
+    }
+  ],
+  "selection_policy": "Only modern mathematics and AI textbooks or monographs, with modern layouts and notation. Exclude antiquarian books and historical mathematical literature from active and future reconstruction. User scope updated 2026-10-27."
+}

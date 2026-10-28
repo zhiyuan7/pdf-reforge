@@ -1,0 +1,170 @@
+{
+  "version": 1,
+  "batch": "next-modern-math-ai-20261028",
+  "status": "acquired_pending_current_batch_completion",
+  "distinct_works": 5,
+  "books": [
+    {
+      "id": "boyd-convex-optimization",
+      "title": "Convex Optimization",
+      "author": "Stephen Boyd; Lieven Vandenberghe",
+      "language": "en",
+      "topic": "optimization",
+      "url": "https://web.stanford.edu/~boyd/cvxbook/bv_cvxbook.pdf",
+      "source_page": "https://web.stanford.edu/~boyd/cvxbook/",
+      "rights": "Author-hosted with Cambridge University Press permission; local evaluation only.",
+      "local_path": "output/benchmark/sources/boyd-convex-optimization.pdf",
+      "bytes": 6881335,
+      "sha256": "40d976c83c18cce1900eff8c41bd5ad408c102b813af39d05ff85678ccf8d76e",
+      "status": "downloaded_not_converted",
+      "pdf_pages": 714,
+      "source_type": "born_digital",
+      "preflight": "output/benchmark/next-batch/preflight.json",
+      "layout_features": [
+        "single_column",
+        "dense_display_math",
+        "linked_bibliography"
+      ],
+      "layout_review_scope": "Physical PDF page30 visual check only; representative conversion pages not yet selected.",
+      "artifact_success": false,
+      "quality_pass": false,
+      "variants": [
+        "native"
+      ]
+    },
+    {
+      "id": "lehman-mathematics-for-computer-science",
+      "title": "Mathematics for Computer Science",
+      "author": "Eric Lehman; F. Thomson Leighton; Albert R. Meyer",
+      "language": "en",
+      "topic": "discrete_mathematics",
+      "url": "https://courses.csail.mit.edu/6.042/spring18/mcs.pdf",
+      "source_page": "https://courses.csail.mit.edu/6.042/spring18/",
+      "rights": "Author/MIT-hosted textbook; verify licence in downloaded front matter before redistribution.",
+      "local_path": "output/benchmark/sources/lehman-mathematics-for-computer-science.pdf",
+      "bytes": 13269308,
+      "sha256": "ea4ced500d4a4bae7beb7a72ae9784abb96ed656ad905976f54c828cf6337dc1",
+      "status": "downloaded_not_converted",
+      "pdf_pages": 1048,
+      "source_type": "born_digital",
+      "preflight": "output/benchmark/next-batch/preflight.json",
+      "layout_features": [
+        "single_column",
+        "proofs_and_problem_labels",
+        "multiline_aligned_equations",
+        "black_proof_end_marks"
+      ],
+      "layout_review_scope": "Physical PDF page30 visual check only; representative conversion pages not yet selected.",
+      "artifact_success": false,
+      "quality_pass": false,
+      "variants": [
+        "native"
+      ]
+    },
+    {
+      "id": "qiu-neural-networks-deep-learning",
+      "title": "神经网络与深度学习（第一版）",
+      "author": "邱锡鹏",
+      "language": "zh",
+      "topic": "deep_learning",
+      "url": "https://raw.githubusercontent.com/nndl/nndl/main/legacy/nndl-v1/main.pdf",
+      "source_page": "https://github.com/nndl/nndl",
+      "rights": "Author-maintained repository; local evaluation only; no redistribution licence asserted.",
+      "local_path": "output/benchmark/sources/qiu-neural-networks-deep-learning.pdf",
+      "bytes": 6549956,
+      "sha256": "db5504e8400d2bbe54ba22a1e5e1f67366e04842a1ef24c156ce762971bb4d1a",
+      "status": "downloaded_not_converted",
+      "pdf_pages": 444,
+      "source_type": "born_digital",
+      "preflight": "output/benchmark/next-batch/preflight.json",
+      "layout_features": [
+        "chinese_main_column_with_margin_notes",
+        "colored_emphasis_and_links",
+        "latin_names_in_chinese_prose"
+      ],
+      "layout_review_scope": "Physical PDF page30 visual check only; representative conversion pages not yet selected.",
+      "artifact_success": false,
+      "quality_pass": false,
+      "variants": [
+        "native"
+      ]
+    },
+    {
+      "id": "mackay-information-theory",
+      "title": "Information Theory, Inference, and Learning Algorithms",
+      "author": "David J. C. MacKay",
+      "language": "en",
+      "topic": "information_theory",
+      "url": "https://www.inference.org.uk/itprnn/book.pdf",
+      "source_page": "https://www.inference.org.uk/mackay/itila/book.html",
+      "rights": "Author-hosted electronic textbook; local evaluation only; no redistribution licence asserted.",
+      "local_path": "output/benchmark/sources/mackay-information-theory.pdf",
+      "bytes": 11675219,
+      "sha256": "868adc5f0ef6630366b122d88d691acfbe8339978b4ec3f38fca5e231f135791",
+      "status": "downloaded_not_converted",
+      "pdf_pages": 640,
+      "source_type": "born_digital",
+      "preflight": "output/benchmark/next-batch/preflight.json",
+      "layout_features": [
+        "single_main_column",
+        "numbered_multiline_equations",
+        "large_binary_matrices"
+      ],
+      "layout_review_scope": "Physical PDF page30 visual check only; representative conversion pages not yet selected.",
+      "artifact_success": false,
+      "quality_pass": false,
+      "variants": [
+        "native"
+      ]
+    },
+    {
+      "id": "james-introduction-statistical-learning",
+      "title": "An Introduction to Statistical Learning with Applications in R, first edition, seventh printing",
+      "author": "Gareth James; Daniela Witten; Trevor Hastie; Robert Tibshirani",
+      "language": "en",
+      "topic": "statistical_learning",
+      "url": "https://www.statlearning.com/s/ISLR-Seventh-Printing.pdf",
+      "resolved_url": "https://static1.squarespace.com/static/5ff2adbe3fe4fe33db902812/t/6009dd9fa7bc363aa822d2c7/1611259312432/ISLR+Seventh+Printing.pdf",
+      "source_page": "https://www.statlearning.com/",
+      "rights": "Official book website provides free PDF download; local evaluation only; copyright retained.",
+      "local_path": "output/benchmark/sources/james-introduction-statistical-learning.pdf",
+      "bytes": 11237547,
+      "sha256": "dd6997f961a132293e79cdf1b4969be666dcd4a1660fc5716691b46e29e118f9",
+      "status": "downloaded_not_converted",
+      "pdf_pages": 441,
+      "source_type": "born_digital",
+      "preflight": "output/benchmark/next-batch/preflight.json",
+      "layout_features": [
+        "main_column_with_margin_notes",
+        "blue_chapter_and_section_headings",
+        "colored_inline_keywords",
+        "footnotes"
+      ],
+      "layout_review_scope": "Physical PDF page30 visual check only; representative conversion pages not yet selected.",
+      "artifact_success": false,
+      "quality_pass": false,
+      "variants": [
+        "native"
+      ]
+    }
+  ],
+  "scope": "Downloads and PDF preflight only; no extraction, conversion or quality pass claimed. Current PDC issues remain active.",
+  "acquisition_failures": [
+    {
+      "id": "shalev-understanding-machine-learning",
+      "reason": "Author host returned HTML rather than PDF; not counted as acquired."
+    },
+    {
+      "id": "hastie-elements-statistical-learning",
+      "reason": "Author host connection timed out; not counted as acquired."
+    },
+    {
+      "id": "sutton-barto-reinforcement-learning",
+      "reason": "Author host TLS certificate could not be verified; not counted as acquired."
+    }
+  ],
+  "coverage_gaps": [
+    "No newly acquired real scan in this queued set; current PDC true scan remains active.",
+    "Continuous double-column body still unverified."
+  ]
+}

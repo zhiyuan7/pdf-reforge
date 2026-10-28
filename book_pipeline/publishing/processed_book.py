@@ -28,8 +28,12 @@ class EditedBook:
         by_section=defaultdict(list)
         for b in book['blocks']:by_section[b['section']].append(b)
         for section in book['sections']:
-            h=section['heading'];lo,hi=original.span(h);start=self.offset
-            hi=source_heading_end(original,lo,hi)
+            h=section['heading'];start=self.offset
+            if h.get('implicit'):
+                lo=hi=0
+            else:
+                lo,hi=original.span(h)
+                hi=source_heading_end(original,lo,hi)
             for atom,a,z in original.fragments(lo,hi):
                 self.append(atom,a,z,atom['content'][a:z],section['id'],None,None)
             self.heading_spans[section['id']]=(start,self.offset)
@@ -133,6 +137,18 @@ class EditedBook:
         if not text and atom['kind']=='text':return None
         new={**atom,'id':f'edited-{len(self.atoms)+1:06d}','group':group,'content':text,'length':max(1,len(text)),
              'original_atom':atom['id'],'original_start_offset':a,'original_end_offset':z}
+        if atom.get('source_text_runs'):
+            # Style offsets refer to exact source bytes. Cropped, unchanged
+            # fragments can rebase them; rewritten prose cannot inherit them.
+            new.pop('source_text_runs', None)
+            if atom['content'][a:z] == text:
+                runs = []
+                for r in atom['source_text_runs']:
+                    if r['start'] >= z or a >= r['end']: continue
+                    run = {**r, 'start':max(a,r['start'])-a, 'end':min(z,r['end'])-a}
+                    if z < r['end']: run.pop('gap_after_em', None)
+                    runs.append(run)
+                if runs: new['source_text_runs'] = runs
         if block and len(block['source_blocks'])>1 and atom['kind']=='text':new['role']='text'
         start=self.offset;self.offset+=new['length'];self.atoms.append(new)
         base=self.original.prefix[self.original.ids[atom['id']]]
@@ -213,7 +229,20 @@ def merge_footnote_continuations(original, notes):
     notes[:]=[n for n in notes if n['id'] not in removed]
 
 
+def saved_heading_policy(metadata, config):
+    settings={**metadata['heading_layout'],'standalone_levels':[1],'page_break_after_levels':[2]}
+    native_config={**config,'float_assets':True,'start_page_levels':[2]}
+    if config.get('publication_scope') == 'excerpt':
+        # A mid-chapter sample needs continuous section flow. Retain chapter
+        # title pages and explicit anchor breaks, but avoid flushing a mostly
+        # empty page merely because a section begins inside the sample.
+        settings['page_break_after_levels'] = []
+        native_config['start_page_levels'] = []
+    return settings, native_config
+
+
 def render_saved_book(original,processing,mapping_directory,metadata,config,output,progress=lambda *args:None):
+    config = {**config, '_budget_job_id': config.get('_budget_job_id', original.source['input_sha256'])}
     processing=Path(processing).resolve();mapping_directory=Path(mapping_directory).resolve();output=Path(output).resolve()
     inputs=[processing,mapping_directory,Path(original.source['mineru_dir']).resolve()]
     if any(output==p or output.is_relative_to(p) for p in inputs):raise ValueError('Render into a separate output directory')
@@ -233,24 +262,13 @@ def render_saved_book(original,processing,mapping_directory,metadata,config,outp
     edited=EditedBook(original,book,processing);references=edited.map_hints(mapping)
     decisions=dict(objects=[],exclusions=[],corrections=[],joins=[],issues=[],bold_spans=edited.bold,
                    page_footnotes=edited.footnotes)
-    settings={**metadata['heading_layout'],'standalone_levels':[1],'page_break_after_levels':[2]}
-    native_config={**config,'float_assets':True,'start_page_levels':[2]}
+    settings, native_config = saved_heading_policy(metadata, config)
     project=output/'latex';reports=output/'reports';reports.mkdir(parents=True,exist_ok=True)
     correction_path=output/'text_corrections.json'
     if correction_path.exists():
+        from book_pipeline.publishing.text_corrections import validate_corrections
         correction=read(correction_path)
-        if correction.get('source_sha256')!=fingerprint(edited.index.source):
-            raise ValueError('Render text corrections do not match the edited source')
-        for row in correction['items']:
-            atom=edited.index.atoms[edited.index.ids[row['atom']]]
-            lo,hi=row['start_offset'],row['end_offset']
-            if (atom['kind'] not in {'text','math','display_math'} or not 0<=lo<hi<=atom['length'] or
-                    atom['content'][lo:hi]!=row['expected'] or not isinstance(row['replacement'],str)):
-                raise ValueError('Render text correction does not match its exact source interval')
-            if atom['kind']!='text' and (atom['content'][max(0,lo-6):lo]!=r'\text{' or
-                    atom['content'][hi:hi+1]!='}' or re.search(r'[{}\\$]',row['replacement'])):
-                raise ValueError('Math text corrections must address a complete plain text label')
-            decisions['corrections'].append(row)
+        decisions['corrections']=validate_corrections(edited.index,correction)
         before[str(correction_path)]=digest(correction_path)
     footnote_path=output/'footnote_overrides.json'
     if footnote_path.exists():
@@ -264,7 +282,10 @@ def render_saved_book(original,processing,mapping_directory,metadata,config,outp
                 if original.text(note['source_lo']+marker['start'],note['source_lo']+marker['end'])!=marker['text']:
                     raise ValueError('Reviewed footnote marker differs from the source')
                 note['marker']=marker
-            if override.get('reference'):
+            if override.get('missing_reference'):
+                from book_pipeline.publishing.reviewed_callouts import missing_reference
+                options=[missing_reference(original,note,override['missing_reference'],overrides.get('evidence'))]
+            elif override.get('reference'):
                 ref=override['reference'];source_atom=original.atoms[original.ids[ref['atom']]]
                 a,z=ref['start_offset'],ref['end_offset']
                 if (source_atom['kind'] not in {'text','math'} or source_atom['page']+1!=note['page'] or
@@ -279,15 +300,77 @@ def render_saved_book(original,processing,mapping_directory,metadata,config,outp
                          c['start_offset']==override['start_offset']]
             if len(options)!=1 or not note.get('marker'):
                 raise ValueError('A footnote override must select one existing source candidate')
-            reference=options[0];a,z=edited.project(reference['lo'],reference['hi'])
+            reference=options[0]
+            if reference.get('reviewed_missing_callout'):
+                a,z=edited.project(reference['lo']-1,reference['hi'])
+                if z-a != 1 or edited.index.text(a,z) != original.text(reference['lo']-1,reference['hi']):
+                    raise ValueError('Reviewed missing callout anchor was changed during processing')
+                a=z
+            else:
+                a,z=edited.project(reference['lo'],reference['hi'])
             atom=edited.index.atoms[edited.index.ids[edited.index.address(z,True)['atom']]]
-            note.update(status='matched',reason='reviewed_original_source_marker',
+            note.update(status='matched',reason=('reviewed_missing_source_callout' if reference.get('reviewed_missing_callout')
+                        else 'reviewed_original_source_marker'),
                         reference={**reference,'edited_lo':a,'edited_hi':z},
                         insert_after=z if atom['kind']=='text' else edited.index.prefix[edited.index.ids[atom['id']]+1])
             marker=note['marker']
             note['marker_lo'],note['marker_hi']=edited.project(note['source_lo']+marker['start'],note['source_lo']+marker['end'])
         before[str(footnote_path)]=digest(footnote_path)
     merge_footnote_continuations(original,edited.footnotes)
+    from book_pipeline.publishing.raster_styles import recover_raster_styles
+    styles, style_report = recover_raster_styles(edited.index, original, native_config,
+        reports/'raster_styles', {c['atom'] for c in decisions['corrections']}, progress)
+    from book_pipeline.publishing.raster_body_styles import recover_body_styles
+    body_styles, body_report = recover_body_styles(edited.index, original,
+        reports/'raster_styles', {c['atom'] for c in decisions['corrections']})
+    from book_pipeline.publishing.caption_layout import recover_caption_boxes
+    decisions['caption_boxes'] = recover_caption_boxes(edited.index, original, body_report,
+        {c['atom'] for c in decisions['corrections']})
+    from book_pipeline.publishing.native_note_styles import recover_native_note_styles
+    native_styles, native_style_report = recover_native_note_styles(edited.index, original,
+        {c['atom'] for c in decisions['corrections']})
+    from book_pipeline.publishing.raster_cjk_styles import recover_cjk_note_styles
+    cjk_styles, cjk_report = recover_cjk_note_styles(edited.index, original,
+        reports/'raster_styles', {c['atom'] for c in decisions['corrections']})
+    for atom, runs in [*body_styles.items(), *native_styles.items()]:
+        combined = sorted([*styles.get(atom, []), *runs], key=lambda r: r['start'])
+        if any(a['end'] > z['start'] for a, z in zip(combined, combined[1:])):
+            raise ValueError('Independently observed scan styles overlap: '+atom)
+        styles[atom] = combined
+    from book_pipeline.publishing.raster_styles import merge_style_evidence
+    for atom, runs in cjk_styles.items():
+        styles[atom] = merge_style_evidence(edited.index.atoms[edited.index.ids[atom]]['content'],
+                                          styles.get(atom, []), runs)
+    reviewed_path = output/'source_style_overrides.json'
+    if reviewed_path.exists():
+        from book_pipeline.publishing.reviewed_styles import validate_reviewed_styles, apply_reviewed_styles
+        from book_pipeline.publishing.reviewed_tables import validate_reviewed_table_math, validate_reviewed_table_styles
+        style_review = read(reviewed_path)
+        reviewed = validate_reviewed_styles(edited.index, style_review, decisions['corrections'])
+        decisions['table_math'] = validate_reviewed_table_math(edited.index, style_review)
+        decisions['table_styles'] = validate_reviewed_table_styles(edited.index, style_review)
+        from book_pipeline.publishing.caption_layout import reviewed_caption_continuations
+        decisions['caption_continuations'] = reviewed_caption_continuations(edited.index, style_review,
+            decisions['caption_boxes'], edited.registry, decisions['exclusions'])
+        for atom, runs in decisions['table_styles'].items():
+            if any(a['start'] < b['end'] and b['start'] < a['end']
+                   for a in runs for b in decisions['table_math'].get(atom, [])):
+                raise ValueError('Reviewed table text styles overlap reviewed math')
+        for atom, runs in reviewed.items():
+            styles[atom] = apply_reviewed_styles(edited.index.atoms[edited.index.ids[atom]]['content'],
+                                                styles.get(atom, []), runs)
+        before[str(reviewed_path)] = digest(reviewed_path)
+        style_report['visual_review'] = dict(path=str(reviewed_path), ranges=reviewed,
+                                           table_math=decisions['table_math'], table_styles=decisions['table_styles'])
+        if reviewed or decisions['table_math'] or decisions['table_styles']:
+            style_report['status'] = 'requires_visual_review'
+    style_report['body_cpu'] = body_report
+    style_report['native_note_cpu'] = native_style_report
+    style_report['cjk_note_cpu'] = cjk_report
+    if body_styles or native_styles or cjk_styles:
+        style_report['status'] = 'requires_visual_review'
+    decisions['source_styles'] = styles
+    save(reports/'raster_styles.json', style_report)
     save(reports/'input_sources.json',dict(source=book['source'],processing=str(processing),mapping=str(mapping_directory),
          processed_sha256=book['processed_sha256'],targets_sha256=mapping['targets_sha256'],input_files_sha256=before))
     save(reports/'edited_source.json',edited.index.source)
@@ -319,6 +402,9 @@ def render_saved_book(original,processing,mapping_directory,metadata,config,outp
     result=dict(method=METHOD,processing_method=report['method'],status='compiled' if compilation['success'] else 'compilation_failed',
         output=str(output),tex=str(project/'main.tex'),pdf=str(project/'main.pdf') if compilation['success'] else None,
         source=book['source'],usage=formula_repairs['usage'],
+        raster_styles=dict(status=style_report['status'], styled_atoms=len(styles),
+            styled_ranges=sum(len(r) for r in styles.values()), usage=style_report['usage'],
+            report=str(reports/'raster_styles.json')),
         formula_repairs=dict(status=formula_repairs['status'],repaired_atoms=formula_repairs['repaired_atoms'],
                              report=str(reports/'formula_repairs.json')),
         table_repairs=dict(status=formula_repairs['table_repairs']['status'],repaired_atoms=formula_repairs['table_repairs']['repaired_atoms'],
@@ -364,7 +450,8 @@ def write_render_report(output,result):
     s=result['statistics'];c=result['compilation']
     current=result.get('processing_method','').startswith('page_content_keywords_v')
     lines=['# 三阶段结果的 LaTeX 排版报告','',
-           '复用保存的标题、类型删除、合并和本地编号映射结果；仅对定位到编译错误的公式发送原图进行 LaTeX 格式恢复。','',
+           '复用保存的标题、类型删除、合并和本地编号映射结果；CPU确认边界的灰色侧注按原图恢复斜体/粗体，编译错误公式按原图恢复 LaTeX。字形校核不改写正文，未变的已验证回复复用缓存。','',
+           f"扫描字形：{result.get('raster_styles',{}).get('styled_ranges',0)} 处；灰色侧注按原图校核，正文斜体由独立CPU OCR与字形比对确认。范围、证据与费用见 reports/raster_styles.json，仍需视觉核查。",'',
            f"公式编译恢复状态：{result.get('formula_repairs',{}).get('status','not_needed')}；修复公式 {result.get('formula_repairs',{}).get('repaired_atoms',0)} 个。模型请求与重试用量见 reports/formula_repairs.json，原图、回复和编译历史均保留。",'',
            f"表格编译恢复状态：{result.get('table_repairs',{}).get('status','not_needed')}；修复表格 {result.get('table_repairs',{}).get('repaired_atoms',0)} 个。只调整排版模板，原单元格逐字填回；原图、反馈与验证见 reports/table_repair。",'',
            f"状态：{result['status']}。标题 {s['headings']} 个，处理块 {s['processed_blocks']} 个；加粗小标题 {s['styled_subheadings']} 个，公式颜色框 {s['formula_modules']} 个，例题 {s['examples']} 个。",'',

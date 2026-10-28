@@ -14,6 +14,7 @@ from urllib.request import getproxies, proxy_bypass
 
 from book_pipeline.config import ROOT, digest, fingerprint, read, save, load_environment
 from book_pipeline.ai.costs import estimate, UsageLedger
+from book_pipeline.ai.budget import BudgetGuard
 
 
 class APIFailure(RuntimeError):
@@ -53,6 +54,7 @@ class DeepSeekClient:
         self._api = None
         self.start_line = len(self.calls.read_text().splitlines()) if self.calls.exists() else 0
         self.ledger = UsageLedger(self.calls, config, self.start_line)
+        self.budget = BudgetGuard(config, self.cache.resolve())
         self.shared_caches = [ROOT / p for p in config.get("shared_cache_dirs", [])]
 
     def _connect(self):
@@ -149,7 +151,10 @@ class DeepSeekClient:
         while retry_until_valid or attempt <= self.config["attempts"]:
             if self.cancel.is_set():
                 raise APIFailure("Conversion cancelled")
+            if not self.transport:
+                self._connect()  # Local configuration failures cannot incur billing.
             raw = None
+            reservation = self.budget.reserve(task, request_config['max_tokens'], wait_for_inflight=True)
             try:
                 if self.transport:
                     raw = self.transport(task, messages, {**request_config,'thinking':effective_thinking})
@@ -168,6 +173,7 @@ class DeepSeekClient:
                 self.record(task, attempt, error="APIFailure")
                 raise
             except Exception as error:
+                self.budget.settle(reservation, rejected=getattr(error, 'status_code', None) in (400, 401, 402, 403, 404, 422))
                 last_service_failure = True
                 service_failures += 1
                 code = getattr(error, "status_code", None)
@@ -178,6 +184,7 @@ class DeepSeekClient:
                 if retry_until_valid and service_failures >= self.config['attempts']:
                     raise APIFailure('DeepSeek service unavailable after retries: '+last_type) from None
             else:
+                self.budget.settle(reservation, raw.get('usage'))
                 last_service_failure = False
                 service_failures = 0
                 try:
@@ -199,13 +206,13 @@ class DeepSeekClient:
                     save(self.cache / "invalid" / (key + f".{attempt}.json"),
                          {"task": task, "attempt": attempt, "validation_error": error_text,
                           "response": raw.get("content", "") if isinstance(raw, dict) else ""})
+                    # Reasoning can consume the complete output allowance before
+                    # emitting JSON. Bounded tasks need the same direct-output
+                    # fallback as compiler feedback; keep their attempt limit.
+                    if raw.get('finish_reason') == 'length':
+                        effective_thinking = 'disabled'
                     # Only actual response validation errors are sent to the model.
                     if retry_until_valid:
-                        # A reasoning-only response is not a formula candidate.
-                        # After exhausting that budget, request direct code while
-                        # continuing the same image/compiler feedback loop.
-                        if raw.get('finish_reason') == 'length':
-                            effective_thinking = 'disabled'
                         # Keep the failed candidate beside its exact diagnostic. The
                         # original message, including the original image, stays in
                         # every request; bound history rather than repair attempts.

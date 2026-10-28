@@ -45,6 +45,8 @@ def main(argv=None):
                 args.pdf = Path(read(args.mineru_dir / 'manifest.json')['input_pdf'])
             if args.pdf is None:
                 parser.error('请提供 --pdf 或 --mineru-dir')
+            from book_pipeline.config import digest
+            config['_budget_job_id'] = digest(args.pdf)
             from .pipeline import load_book, load_metadata, match_headings, process_content, run_workflow
             progress = lambda stage, n, total: print(f'{stage}: {n}/{total}', flush=True)
             stage = ('headings' if args.match_headings else 'content' if args.process_sections else

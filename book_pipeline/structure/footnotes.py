@@ -4,7 +4,7 @@ from copy import deepcopy
 import re
 import unicodedata
 
-METHOD = 'page_footnotes_same_page_unique_v2'
+METHOD = 'page_footnotes_same_page_unique_v3'
 FORMULA_DEDUP_METHOD = 'page_footnote_overlapping_formula_copy_v1'
 MARGINALS = {'header', 'footer', 'page_number'}
 CIRCLED = '①②③④⑤⑥⑦⑧⑨⑩⑪⑫⑬⑭⑮⑯⑰⑱⑲⑳➀➁➂➃➄➅➆➇➈➉❶❷❸❹❺❻❼❽❾❿'
@@ -43,20 +43,44 @@ def extract_marker(text):
                 start=match.start(group), end=match.end(group))
 
 
-def marker_occurrences(text, marker, kind):
+def marker_occurrences(text, marker, kind, *, allow_plain=False):
     for match in TOKENS.finditer(text):
         if marker_key(match[0]) != (marker['style'], marker['number']):
             continue
         if marker['style'] == 'number':
             before, after = text[:match.start()], text[match.end():]
-            if (before and (before[-1].isalnum() and ord(before[-1]) < 128 or before[-1] in '.．_')) or (
-                    after and (after[0].isalnum() and ord(after[0]) < 128 or after[0] in '.．_')):
+            superscript = all(c in SUPERSCRIPTS for c in match[0])
+            raised = re.search(r'(?:\^\s*\{?\s*|\\textsuperscript\s*\{\s*)$', before)
+            if not superscript and not raised and ((before and (before[-1].isalnum() and ord(before[-1]) < 128 or before[-1] in '.．_')) or (
+                    after and (after[0].isalnum() and ord(after[0]) < 128 or after[0] in '.．_'))):
                 continue
+            if kind == 'text' and not superscript:
+                # Ordinary prose numbers (axioms, steps, dates) are not note
+                # marks. Require explicit raised typography; missing marks
+                # remain unmatched rather than attaching to a lone numeral.
+                if not raised and not allow_plain:
+                    continue
             # Numbers inside ordinary mathematics are not textual note marks.
             # Accept only an isolated superscript marker, never x^1 or 1+2.
             if kind != 'text' and not re.fullmatch(r'\s*(?:\{\s*\}\s*)?\^\s*(?:\{\s*'+re.escape(match[0])+r'\s*\}|'+re.escape(match[0])+r')\s*', text):
                 continue
         yield match.start(), match.end()
+
+
+def native_raised_marker(index, atom, marker):
+    """Corroborate plain native digits with the PDF's raised span flag."""
+    if atom.get('extraction_method') != 'native' or marker['style'] != 'number':
+        return False
+    box = atom.get('block_bbox') or atom.get('bbox')
+    pdf = index.source.get('source_pdf')
+    if not box or not pdf:
+        return False
+    import pymupdf
+    with pymupdf.open(pdf) as document:
+        page = document[atom['page']]
+        clip = pymupdf.Rect(*(v*(page.rect.width if k%2==0 else page.rect.height) for k,v in enumerate(box)))
+        return any(s['flags'] & 1 and s['text'].strip() == marker['text']
+                   for b in page.get_text('dict',clip=clip)['blocks'] for line in b.get('lines',[]) for s in line['spans'])
 
 
 def formula_tokens(text):
@@ -172,7 +196,10 @@ def classify_footnotes(index, plan):
             for part in block['parts']:
                 if part['kind'] not in {'text', 'math'}:
                     continue
-                for a, z in marker_occurrences(part['text'], marker, part['kind']):
+                atom = index.atoms[index.ids[part['atom']]]
+                plain = (part['kind'] == 'text' and marker['text'] in part['text']
+                         and native_raised_marker(index,atom,marker))
+                for a, z in marker_occurrences(part['text'], marker, part['kind'], allow_plain=plain):
                     lo, hi = part['lo']+a, part['lo']+z
                     atom = index.atoms[index.ids[part['atom']]]
                     note['candidates'].append(dict(block=block['b'], atom=atom['id'], lo=lo, hi=hi,

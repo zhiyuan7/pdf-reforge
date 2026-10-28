@@ -21,6 +21,7 @@ def load_book(pdf, mineru_directory, formula_corrections=None):
 
 
 def match_headings(index, metadata, config, output, progress):
+    config = {**config, '_budget_job_id': config.get('_budget_job_id', index.source['input_sha256'])}
     output = Path(output)
     if output.resolve() == Path(index.source['mineru_dir']).resolve():
         raise ValueError('标题结果目录不能覆盖 MinerU 原始识别目录')
@@ -35,6 +36,7 @@ def match_headings(index, metadata, config, output, progress):
 
 
 def process_content(index, heading_directory, config, output, seed, progress):
+    config = {**config, '_budget_job_id': config.get('_budget_job_id', index.source['input_sha256'])}
     heading_directory, output = Path(heading_directory), Path(output)
     saved = read(heading_directory / 'heading_matches.json')['source']
     if any(saved[k] != index.source[k] for k in ('input_sha256', 'mineru_sha256')):
@@ -56,6 +58,7 @@ def prepare_book_source(pdf, source_directory, config, output, progress=lambda *
     from book_pipeline.ingestion.native import prepare_source
     from book_pipeline.ingestion.translation import translate_source
     output = Path(output).resolve()
+    config = {**config, '_budget_job_id': config.get('_budget_job_id', digest(pdf))}
     if source_directory is not None:
         source_path = Path(source_directory).resolve()
         if output == source_path or output.is_relative_to(source_path):
@@ -68,8 +71,9 @@ def prepare_book_source(pdf, source_directory, config, output, progress=lambda *
             try:
                 manifest = read(path)
                 if (manifest.get('mineru_version') and manifest.get('input_sha256') == sha
-                        and not manifest.get('translation') and not manifest.get('corrected_source_sha256')):
-                    load_source(pdf, path.parent)
+                        and not manifest.get('translation') and not manifest.get('corrected_source_sha256')
+                        and not manifest.get('table_prose_recovery')):
+                    load_source(pdf, path.parent, 'all')
                     source_directory = path.parent
                     break
             except (OSError, ValueError, KeyError):
@@ -78,12 +82,20 @@ def prepare_book_source(pdf, source_directory, config, output, progress=lambda *
         # Preserve old resumable MinerU runs when present.
         legacy = output / 'mineru'
         if (legacy / 'manifest.json').is_file():
-            load_source(pdf, legacy)
+            load_source(pdf, legacy, 'all')
             source_directory = legacy
         else:
             source_directory = prepare_source(pdf, output / 'source', config, progress)
     if output == Path(source_directory).resolve() or output.is_relative_to(Path(source_directory).resolve()):
         raise ValueError('输出目录不能覆盖原始提取目录')
+    if read(Path(source_directory)/'manifest.json').get('translation'):
+        return Path(source_directory)
+    from book_pipeline.ingestion.scan_page_frames import recover_scan_page_frames
+    source_directory = recover_scan_page_frames(pdf, source_directory, output/'scan_frame_source', config, progress)
+    from book_pipeline.ingestion.table_prose import recover_table_prose
+    source_directory = recover_table_prose(pdf, source_directory, output/'table_prose_source', config, progress)
+    from book_pipeline.ingestion.raster_panels import recover_raster_panels
+    source_directory = recover_raster_panels(pdf, source_directory, output/'raster_panel_source', config, progress)
     raw = load_book(pdf, source_directory)
     if raw.source.get('translation'):
         return Path(source_directory)
@@ -98,6 +110,7 @@ def prepare_book_source(pdf, source_directory, config, output, progress=lambda *
 
 def run_workflow(pdf, mineru_directory, metadata_path, config, output, seed, progress):
     pdf, output = Path(pdf).resolve(), Path(output).resolve()
+    config = {**config, '_budget_job_id': config.get('_budget_job_id', digest(pdf))}
     if output == pdf.parent or pdf.is_relative_to(output):
         raise ValueError('输出目录不能包含输入 PDF')
     metadata = load_metadata(pdf, metadata_path)
@@ -114,7 +127,7 @@ def run_workflow(pdf, mineru_directory, metadata_path, config, output, seed, pro
         return {'status': second['status'], 'headings': first, 'content': second}
     mapped = run_rule_mapping(index, content, mapping, heading_directory=headings, progress=progress)
     rendered = render_saved_book(index, content, mapping, metadata, config, output / 'pdf', progress=progress)
-    return {'status': rendered['status'], 'formula_corrections': dict(
+    return {'status': rendered['status'], 'source_directory': str(mineru_directory), 'formula_corrections': dict(
                 regions=len(formula_repairs['records']), usage=formula_repairs['usage']),
             'headings': first, 'content': second,
             'references': mapped['statistics'], 'render': rendered}

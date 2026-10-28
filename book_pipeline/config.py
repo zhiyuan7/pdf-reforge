@@ -61,10 +61,22 @@ def load_config(path=None):
     if unknown:
         raise ValueError("Unknown book configuration: " + ", ".join(sorted(unknown)))
     config = {**defaults, **custom}
+    budget = config.get('budget')
+    if not isinstance(budget, dict) or set(budget) != {'per_call_cny', 'per_book_cny', 'daily_cny', 'usd_to_cny_ceiling', 'context_tokens', 'ledger'}:
+        raise ValueError('budget requires call/book/day limits, conversion ceiling, context size and ledger')
+    import math
+    for name in ('per_call_cny', 'per_book_cny', 'daily_cny', 'usd_to_cny_ceiling', 'context_tokens'):
+        value = budget[name]
+        if isinstance(value, bool) or not isinstance(value, (int, float)) or not math.isfinite(value) or value <= 0:
+            raise ValueError('budget.' + name + ' must be finite and positive')
+    if not isinstance(budget['ledger'], str) or not budget['ledger'].strip():
+        raise ValueError('budget.ledger must be a nonempty path')
     if config['input_mode'] not in {'auto', 'ocr'}:
         raise ValueError('input_mode must be auto or ocr')
     if config['translation'] not in {'auto', 'off'}:
         raise ValueError('translation must be auto or off')
+    if config.get('publication_scope','book') not in {'book', 'excerpt'}:
+        raise ValueError('publication_scope must be book or excerpt')
     toc_pages = config.get('toc_pages', [])
     if not isinstance(toc_pages,list) or any(isinstance(p,bool) or not isinstance(p,int) or p<1 for p in toc_pages) or len(set(toc_pages))!=len(toc_pages) or toc_pages!=sorted(toc_pages):
         raise ValueError('toc_pages must be increasing unique positive physical PDF page numbers')

@@ -199,6 +199,8 @@ def heading_correspondence(index,book,plan,heading_directory=None):
     targets = {t['context']['heading']:t for t in book['targets'] if t['kind']=='heading'}
     rows = []
     for section in book['sections']:
+        if section['heading'].get('implicit'):
+            continue
         h = section['heading'];t = targets[section['id']];toc = catalogue.get(section['id'],{})
         rows.append({'toc_id':section['id'],'target_id':t['id'],'toc_title':toc.get('title',h['title']),
                      'source_title':t['label'],'category':h['toc_category'],'level':h['heading_level'],
@@ -270,10 +272,11 @@ def write_rule_report(output,book,result,aliases,processing,processing_directory
                       'heading':t['context']['heading'],'physical_page':t['page'],
                       'searchable':aliases[t['id']]['searchable'],'hint_occurrences':coverage[t['id']],
                       'search_aliases':' / '.join(aliases[t['id']]['number_aliases'])} for t in book['targets']]
-    write_csv(output/'target_coverage.csv',list(coverage_rows[0]),coverage_rows)
+    write_csv(output/'target_coverage.csv',list(coverage_rows[0]) if coverage_rows else
+              ['target_id','kind','number','name','heading','physical_page','searchable','hint_occurrences','search_aliases'],coverage_rows)
     write_processed_book(output,book,processing,processing_directory)
     esc = lambda text:str(text).replace('|','\\|').replace('\n',' ')
-    lines = ['# 卓里奇数学分析：本地类型与编号映射提示','',
+    lines = ['# 本地类型与编号映射提示','',
              '**本次映射 DeepSeek 请求 0 次，输入/输出 tokens 0，API 费用 0。** 删除、合并、纠错、特殊块沿用已保存的处理版本，本次没有重新进行模型处理。','',
              f"扫描 {stats['headings']} 个标题范围、{stats['processed_blocks']} 个处理块；对象登记表保留 {stats['targets']} 个对象，其中 {stats['excluded_example_targets']} 个例题已排除出引用匹配。",'',
              f"检出 {stats['hints']} 条提示：唯一候选 {stats['unique_hints']} 条、多候选 {stats['ambiguous_hints']} 条、未找到候选 {stats['unmatched_hints']} 条。目录—正文标题对照 {stats['heading_matches']} 条。",'',

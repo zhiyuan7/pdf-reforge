@@ -188,8 +188,9 @@ def build_book(index,plan,report,directory):
             atlas.append({'b':unit['blocks'][0],'source_blocks':unit['blocks'],'section':sid,'page':unit['page'],
                           'text':text,'pieces':pieces,'parts':unit['parts'],'context':scope,'declarations':[],
                           'content_role':unit.get('content_role', 'body')})
-        lo,hi=index.span(h)
-        registry.append({'id':'H'+sid.removeprefix('toc-'),'kind':'heading','heading_kind':h['kind'],
+        if not h.get('implicit'):
+            lo,hi=index.span(h)
+            registry.append({'id':'H'+sid.removeprefix('toc-'),'kind':'heading','heading_kind':h['kind'],
                          'number':h['number'],'name':h['title'],'label':index.text(lo,hi),'lo':lo,'hi':hi,
                          'page':index.page_for(lo)+1,'context':scope,'body_preview':'','origin':'matched_toc_heading'})
     modules_by_section = classified_modules(index, units, plan, report, directory)
@@ -356,7 +357,8 @@ def write_processed_book(output,book,processing,processing_directory):
     for row in processing['sections']:
         sid=row['section']['id'];h=row['section']['heading'];processed=read(Path(processing_directory)/'sections'/sid/'processed.json')
         tid='H'+sid.removeprefix('toc-')
-        chunks += [f'<a id="{tid}"></a>', '#'*h['heading_level']+' '+targets[tid]['label'],'']
+        if not h.get('implicit'):
+            chunks += [f'<a id="{tid}"></a>', '#'*h['heading_level']+' '+targets[tid]['label'],'']
         for unit in processed['units']:
             bid=unit['blocks'][0]
             chunks += [f'<a id="{bid}"></a>']+[f'<a id="{tid}"></a>' for tid in anchors[bid]]

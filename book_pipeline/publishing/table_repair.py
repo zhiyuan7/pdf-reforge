@@ -37,11 +37,12 @@ def table_template(html, in_box=False):
             slot = f'@@CELL{counter:04d}@@'
             cells.append(dict(slot=slot, latex=cell.replace(',', r',\allowbreak{}')))
             placeholders.append(slot)
-        rows.append(' & '.join(placeholders)+r' \\')
-    original = '\n'.join(' & '.join(cell.replace(',', r',\allowbreak{}') for cell in row)+r' \\' for row in parser.rows)
+        rows.append(placeholders)
+    from book_pipeline.publishing.latex import table_content
+    original = table_content(parser)
     if rendered.count(original) != 1:
         raise ValueError('Cannot isolate the original table cells unambiguously')
-    return dict(latex=rendered, template=rendered.replace(original, '\n'.join(rows), 1),
+    return dict(latex=rendered, template=rendered.replace(original, table_content(parser,rows), 1),
                 cells=cells, in_box=in_box)
 
 

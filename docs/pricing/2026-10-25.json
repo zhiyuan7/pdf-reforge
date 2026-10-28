@@ -1,0 +1,51 @@
+{
+  "verified_at": "2026-10-24T22:04:57.149253+00:00",
+  "model": "deepseek-flash",
+  "model_version": "DeepSeek-V4.1-Flash-1017",
+  "context": "1M",
+  "max_output": "384K",
+  "image_input": true,
+  "json_output": true,
+  "peak_cny_per_million": {
+    "input_cached": 0.04,
+    "input_uncached": 2,
+    "output": 8
+  },
+  "off_peak_cny_per_million": {
+    "input_cached": 0.02,
+    "input_uncached": 1,
+    "output": 4
+  },
+  "configured_usd_peak": {
+    "input_cached": 0.006,
+    "input_uncached": 0.3,
+    "output": 1.2
+  },
+  "configured_usd_off_peak": {
+    "input_cached": 0.003,
+    "input_uncached": 0.15,
+    "output": 0.6
+  },
+  "budget_conversion_ceiling_cny_per_usd": 8,
+  "conversion_note": "Conservative ceiling; not an exchange-rate quote. Ledger continues to reserve at peak rates.",
+  "off_peak_rule": "Beijing weekdays except PRC public holidays: peak 09:00–12:00 and 14:00–18:00; all other times half price.",
+  "current_run_off_peak_reason": "Sunday, 2026-10-25 in Beijing",
+  "sources": {
+    "pricing_zh": {
+      "url": "https://api-docs.deepseek.com/zh-cn/quick_start/pricing/",
+      "snapshot": "output/automation/iterations/20261025-060003/pricing_zh.html",
+      "sha256": "556097caba8adfeeed6455714bffd731c7f60db520fcee06a922eba5840663a3"
+    },
+    "pricing_en": {
+      "url": "https://api-docs.deepseek.com/quick_start/pricing/",
+      "snapshot": "output/automation/iterations/20261025-060003/pricing_en.html",
+      "sha256": "b856a6e93fa4793ecc8f3fd03a01bb7d8f7572f78a4739da8ce6dbdb09328d66"
+    },
+    "vision": {
+      "url": "https://api-docs.deepseek.com/zh-cn/guides/vision/",
+      "snapshot": "output/automation/iterations/20261025-060003/vision.html",
+      "sha256": "e2893cc471715215872d02384a52e6ac10a0cebc7379f383ab834a6f3ac00f8b"
+    }
+  },
+  "retention": "Keep verification records for at least 14 days."
+}

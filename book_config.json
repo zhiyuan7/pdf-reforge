@@ -3,7 +3,7 @@
   "model": "deepseek-flash",
   "api_key_env": "DEEPSEEK_API_KEY",
   "thinking": "enabled",
-  "concurrency": 4,
+  "concurrency": 2,
   "attempts": 3,
   "timeout_seconds": 180,
   "max_tokens": 32768,
@@ -31,7 +31,7 @@
   "pricing": {
     "model": "deepseek-flash",
     "currency": "USD",
-    "checked_on": "2026-10-03",
+    "checked_on": "2026-10-25",
     "peak": {
       "input_cached": 0.006,
       "input_uncached": 0.3,
@@ -44,5 +44,14 @@
     }
   },
   "input_mode": "auto",
-  "translation": "auto"
+  "translation": "auto",
+  "publication_scope": "book",
+  "budget": {
+    "per_call_cny": 8.0,
+    "per_book_cny": 8.0,
+    "daily_cny": 48.0,
+    "usd_to_cny_ceiling": 8.0,
+    "context_tokens": 1048576,
+    "ledger": "output/budget.sqlite3"
+  }
 }

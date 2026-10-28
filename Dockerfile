@@ -41,10 +41,18 @@ RUN apt-get update \
     && apt-get install -y --no-install-recommends libegl1 \
     && rm -rf /var/lib/apt/lists/*
 
+# A second CPU reader verifies Latin print ligatures without API calls.
+# Scheduled release checks also exercise real Git staging in temporary repos.
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends tesseract-ocr tesseract-ocr-eng git \
+    && rm -rf /var/lib/apt/lists/*
+
 COPY main.py serve.py run_mineru.py mineru_checkpoint.py pipeline_progress.py ./
 COPY book_pipeline/ ./book_pipeline/
 COPY book_templates/ ./book_templates/
 COPY docker/ ./docker/
+COPY scripts/ ./scripts/
+COPY benchmarks/ ./benchmarks/
 COPY models/font_candidates/LxgwWenkaiGB/ ./models/font_candidates/LxgwWenkaiGB/
 COPY book_config.json book_metadata.example.yaml ./
 

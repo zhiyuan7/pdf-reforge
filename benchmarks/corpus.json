@@ -1,0 +1,11 @@
+{
+  "version": 1,
+  "books": [
+    {"id":"axler-zh","title":"线性代数应该这样学 第四版","author":"Sheldon Axler；吴俊达、何阳译","language":"zh","url":"https://linear.axler.net/LADR4eChinese.pdf","source_page":"https://linear.axler.net/","rights":"CC BY-NC 4.0","pages":[20,21],"variants":["native","rasterized"]},
+    {"id":"d2l-zh","title":"动手学深度学习","author":"Aston Zhang, Zachary C. Lipton, Mu Li, Alexander J. Smola","language":"zh","url":"https://zh-v2.d2l.ai/d2l-zh-pytorch.pdf","source_page":"https://zh.d2l.ai/","rights":"Author-hosted open textbook; see source attribution and license","pages":[40,41],"variants":["native"]},
+    {"id":"axler-en","title":"Linear Algebra Done Right, fourth edition","author":"Sheldon Axler","language":"en","url":"https://linear.axler.net/LADR4e.pdf","source_page":"https://linear.axler.net/","rights":"CC BY-NC 4.0","pages":[22,23],"variants":["native","rasterized"]},
+    {"id":"hefferon","title":"Linear Algebra, fourth edition","author":"Jim Hefferon","language":"en","url":"https://jheffero.w3.uvm.edu/linearalgebra/book.pdf","source_page":"https://hefferon.net/linearalgebra/","rights":"Author-hosted free textbook; see book license","pages":[20,21],"variants":["native"]},
+    {"id":"d2l-en","title":"Dive into Deep Learning","author":"Aston Zhang, Zachary C. Lipton, Mu Li, Alexander J. Smola","language":"en","url":"https://d2l.ai/d2l-en.pdf","source_page":"https://d2l.ai/","rights":"Author-hosted open textbook; see source attribution and license","pages":[50,51],"variants":["rasterized"]},
+    {"id":"vmls","title":"Introduction to Applied Linear Algebra","author":"Stephen Boyd and Lieven Vandenberghe","language":"en","url":"https://stanford.edu/~boyd/vmls/vmls.pdf","source_page":"https://stanford.edu/~boyd/vmls/","rights":"Author-hosted with Cambridge University Press permission; local evaluation only","pages":[30,31],"variants":["native"]}
+  ]
+}

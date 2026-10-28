@@ -17,19 +17,20 @@ CONFIG=dict(model='test-model',base_url='https://example.invalid',api_key_env='T
 
 class FormulaFeedbackTests(unittest.TestCase):
     def test_reasoning_budget_exhaustion_switches_to_direct_code_with_same_image(self):
-        with tempfile.TemporaryDirectory() as folder:
-            directory=Path(folder);picture=directory/'original.png';Image.new('RGB',(50,20),'white').save(picture)
-            requests=[]
-            def transport(task,messages,config):
-                requests.append((deepcopy(messages),config['thinking']))
-                if len(requests)==1:return dict(content='',finish_reason='length')
-                return dict(content='{"latex":"x=1"}',finish_reason='stop')
-            client=DeepSeekClient({**CONFIG,'thinking':'enabled'},directory/'cache',transport=transport,sleep=lambda _:None)
-            answer=client.ask('repair','system',{},images=[picture],retry_until_valid=True)
-            self.assertEqual(answer['latex'],'x=1')
-            self.assertEqual([thinking for _,thinking in requests],['enabled','disabled'])
-            self.assertEqual(requests[0][0][1],requests[1][0][1])
-            self.assertIn('finish_reason=length',requests[1][0][-1]['content'])
+        for feedback in (False, True):
+            with self.subTest(retry_until_valid=feedback), tempfile.TemporaryDirectory() as folder:
+                directory=Path(folder);picture=directory/'original.png';Image.new('RGB',(50,20),'white').save(picture)
+                requests=[]
+                def transport(task,messages,config):
+                    requests.append((deepcopy(messages),config['thinking']))
+                    if len(requests)==1:return dict(content='',finish_reason='length')
+                    return dict(content='{"latex":"x=1"}',finish_reason='stop')
+                client=DeepSeekClient({**CONFIG,'thinking':'enabled'},directory/'cache',transport=transport,sleep=lambda _:None)
+                answer=client.ask('repair','system',{},images=[picture],retry_until_valid=feedback)
+                self.assertEqual(answer['latex'],'x=1')
+                self.assertEqual([thinking for _,thinking in requests],['enabled','disabled'])
+                self.assertEqual(requests[0][0][1],requests[1][0][1])
+                self.assertIn('finish_reason=length',requests[1][0][-1]['content'])
 
     def test_full_book_feedback_continues_beyond_the_previous_32_round_limit(self):
         from book_pipeline.ingestion.source import SourceIndex

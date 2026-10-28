@@ -787,7 +787,8 @@ def run_page_content(index, outline, client, directory, count=None, seed=2026100
     existing = directory/'section_results.json'
     if existing.exists():
         old = read(existing)
-        if old['method'] != METHOD or old['source'] != plan['source'] or old.get('heading_sha256') != plan['heading_sha256']:
+        if (old['method'] != METHOD or old['source'] != plan['source'] or old.get('heading_sha256') != plan['heading_sha256']
+                or old.get('footnotes',{}).get('method') != plan['footnotes']['method']):
             raise ValueError('Use a separate output directory for the new second stage/source/headings')
     save(directory/'split_source.json', plan)
     save(directory/'footnotes.json', plan['footnotes'])

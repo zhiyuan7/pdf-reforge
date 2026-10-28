@@ -426,6 +426,7 @@ class JobStore:
         self.stage(identifier, 'content', detail='识别习题章节与特殊块')
         index = load_book(job['pdf'], job['mineru'], job.get('formula_corrections'))
         config = {**self.config, 'shared_cache_dirs': [str(previous / 'cache'), *self.config.get('shared_cache_dirs', [])],
+                  '_budget_job_id': index.source['input_sha256'],
                   'keyword_candidates': validate_candidates(job.get('keyword_candidates', self.config.get('keyword_candidates')),
                                                             self.config.get('numbered_object_labels'))}
         client = DeepSeekClient(config, output / 'cache')

@@ -12,7 +12,7 @@ from book_pipeline.config import digest, save
 from book_pipeline.ingestion.source import SourceIndex, load_source
 from .headings import group_blocks, heading_tail_end, parse_number, span_for, valid_box
 from .layout import analyze_layout, apply_layout_to_outline, printed_number, project_layout
-from .toc_catalog import METHOD as CATALOG_METHOD, normalized, occurrences, read_catalog
+from .toc_catalog import METHOD as CATALOG_METHOD, SOURCE_METHOD, normalized, occurrences, read_catalog
 from .exercise_headings import classify_exercise_headings
 
 
@@ -277,6 +277,11 @@ def analyze_toc_headings(index,metadata,client,config,directory,progress=lambda 
         full = SourceIndex(load_source(index.source['source_pdf'],index.source['mineru_dir']))
     entries,toc,images = read_catalog(full,metadata,client,config,directory,progress)
     matcher = TocMatcher(full,entries,list(images),metadata.get('exclude_pages',[]))
+    for entry in entries:
+        if entry.get('catalog_source') == SOURCE_METHOD:
+            block = matcher.blocks[entry['source_group']]
+            matcher.matches[entry['id']] = matcher.match(entry, block, 0, len(block['text']),
+                SOURCE_METHOD, '无原始目录页；使用识别标题的精确来源地址')
     matcher.run(client,progress)
     outline = make_outline(matcher,metadata,toc,config)
     outline = classify_exercise_headings(outline,client,directory,progress)
@@ -296,6 +301,11 @@ def verify_matching(outline,index):
     previous_page=0
     checked_images={}
     for n,e in enumerate(outline['toc_entries'],1):
+        if e.get('catalog_source') == SOURCE_METHOD:
+            lo, hi = index.span(e['source_span'])
+            if e['id'] != f'toc-{n:04d}' or index.text(lo, hi) != e['title']:
+                raise ValueError('Inferred heading differs from its exact source')
+            continue
         if e.get('catalog_source') != CATALOG_METHOD:
             raise ValueError('Rebuild the TOC catalogue from original images')
         page=e['toc_page'];image=e['toc_image'];path=Path(image['path'])
@@ -326,7 +336,7 @@ def verify_matching(outline,index):
     from .pagination import HeadingPagination
     layout=HeadingLayout(headings,outline['metadata_config'].get('heading_layout'))
     pagination=HeadingPagination([{**h,'lo':index.position(h['start']),'anchor':h['toc_id']} for h in headings],layout=layout)
-    return {'目录原图哈希、区域与跨页顺序':'通过','标题对应正文来源地址与原文':'通过',
+    return {'目录来源验证':'原图哈希与区域，或无目录时的识别标题精确来源地址，均通过','标题对应正文来源地址与原文':'通过',
             '非正文层级统一加一':'通过','匹配范围及不重复使用来源':'通过',
             '确认标题数':len(headings),'最终层级分布':dict(Counter(layout.level(h) for h in headings)),
             '按现有配置独占页的一级标题数':sum(layout.standalone(h) for h in headings),

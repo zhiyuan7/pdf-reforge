@@ -18,6 +18,10 @@
 !book_templates/**
 !docker/
 !docker/**
+!scripts/
+!scripts/**
+!benchmarks/
+!benchmarks/**
 !models/
 !models/font_candidates/
 !models/font_candidates/LxgwWenkaiGB/

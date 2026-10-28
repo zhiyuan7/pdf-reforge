@@ -9,7 +9,8 @@ from book_pipeline.structure.numbered import CAPTION_ROLES
 def detect_image_rows(index):
     pages = defaultdict(list)
     for atom in index.atoms:
-        if atom['kind'] == 'image' and valid_box(atom.get('bbox')):
+        if (atom['kind'] == 'image' and valid_box(atom.get('bbox'))
+                and atom.get('recovery_issue') != 'formula_source_crop_requires_transcription'):
             pages[atom['page']].append(atom)
     rows = []
     for page, images in pages.items():

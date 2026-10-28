@@ -8,6 +8,8 @@ import re
 
 from book_pipeline.config import digest, read
 
+MATERIALIZATION_METHOD = 'source_roles_roundtrip_v5'
+
 
 def selected_pages(spec, page_count):
     if spec in (None, "all"):
@@ -41,7 +43,7 @@ def safe_asset(directory, name):
     return str(path)
 
 
-def load_source(pdf, mineru_dir, page_spec="all"):
+def load_source(pdf, mineru_dir, page_spec=None):
     import pymupdf
     pdf, mineru_dir = Path(pdf).resolve(), Path(mineru_dir).resolve()
     source_hash = digest(pdf)
@@ -54,11 +56,23 @@ def load_source(pdf, mineru_dir, page_spec="all"):
     with pymupdf.open(pdf) as document:
         count = len(document)
         dimensions = {i: [page.rect.width, page.rect.height] for i, page in enumerate(document)}
-    chosen = selected_pages(page_spec, count)
+    # A page-limited OCR run retains the original PDF and physical indices.
+    # Only an explicit manifest selection may narrow the default scope; never
+    # silently accept missing pages by inferring scope from recognized blocks.
+    declared = manifest.get('source_page_numbers')
+    if page_spec is None and declared is not None:
+        if (not isinstance(declared, list) or not declared
+                or any(type(n) is not int or not 1 <= n <= count for n in declared)
+                or declared != sorted(set(declared))):
+            raise ValueError('Invalid manifest source_page_numbers')
+        chosen = [n-1 for n in declared]
+    else:
+        chosen = selected_pages(page_spec, count)
     pages_by_id = {p["page_idx"]: p for p in middle["pages"]}
     if len(pages_by_id) != len(middle["pages"]) or not set(chosen) <= set(pages_by_id):
         raise ValueError("Duplicate or missing selected MinerU page indices")
     atoms, pages = [], []
+    extraction = {p['page']-1:p['method'] for p in manifest.get('pages',[]) if isinstance(p,dict) and 'method' in p}
     for number in chosen:
         page_atoms = []
         for block in pages_by_id[number].get("blocks", []):
@@ -81,6 +95,9 @@ def load_source(pdf, mineru_dir, page_spec="all"):
                         leaves.append(("image", "", node, role))
                     elif role == "table_body":
                         leaves.append(("table", flatten(node), node, role))
+                    elif isinstance(node.get('content'), str):
+                        if node['content']:
+                            leaves.append(('text', node['content'], node, inherited_role if role == 'text' else role))
                     else:
                         visit(node.get("content", ""), inherited_role if role == "text" else role)
             if block["type"] in ("image", "chart") and isinstance(block.get("content"), str):
@@ -93,6 +110,15 @@ def load_source(pdf, mineru_dir, page_spec="all"):
                         "content": content, "length": max(1, len(content)),
                         "bbox": node.get("bbox", block.get("bbox")),
                         "level_hint": block.get("level"), "block_bbox": block.get("bbox")}
+                method = extraction.get(number, 'ocr' if manifest.get('mineru_version') else None)
+                if method:
+                    atom['extraction_method'] = method
+                if kind == 'text' and node.get('source_text_runs'):
+                    atom['source_text_runs'] = deepcopy(node['source_text_runs'])
+                for key in ('writing_direction', 'ocr_table_recovery', 'recovery_issue', 'source_prose_end_bbox'):
+                    if block.get(key): atom[key] = block[key]
+                if block.get('source_panel'):
+                    atom.update(source_panel=block['source_panel'], source_panel_title=block.get('source_panel_title',False))
                 if node.get("image_path"):
                     atom["asset"] = safe_asset(mineru_dir, node["image_path"])
                     atom["asset_sha256"] = digest(atom["asset"])
@@ -105,7 +131,9 @@ def load_source(pdf, mineru_dir, page_spec="all"):
             "mineru_dir": str(mineru_dir), "mineru_sha256": digest(mineru_dir / "middle_json.json"),
             "source_page_count": count, "selected_pages": chosen, "pages": pages, "atoms": atoms,
             **({"ingestion_method": manifest["method"]} if manifest.get("method") else {}),
-            **({"translation": manifest["translation"]} if manifest.get("translation") else {})}
+            **({"table_prose_recovery": manifest["table_prose_recovery"]} if manifest.get("table_prose_recovery") else {}),
+            **({"translation": manifest["translation"]} if manifest.get("translation") else {}),
+            **({'scan_page_frames':manifest['scan_page_frames']} if manifest.get('scan_page_frames') else {})}
 
 
 class SourceIndex:
@@ -195,6 +223,8 @@ def corrected_atoms(source, corrections):
     for correction in sorted(corrections, key=lambda c: (c["atom"], -c["start_offset"])):
         a = by_id[correction["atom"]]
         lo, hi = correction["start_offset"], correction["end_offset"]
+        if a['content'][lo:hi] != correction['replacement']:
+            a.pop('source_text_runs', None)  # Ink offsets describe the unedited source bytes.
         a["content"] = a["content"][:lo] + correction["replacement"] + a["content"][hi:]
     return result
 
@@ -220,7 +250,8 @@ def materialize_source(index, directory):
     manifest_path = directory / 'manifest.json'
     if manifest_path.exists():
         manifest = read(manifest_path)
-        if manifest.get('corrected_source_sha256') != stamp:
+        if (manifest.get('corrected_source_sha256') != stamp
+                or manifest.get('materialization_method') != MATERIALIZATION_METHOD):
             raise ValueError('Corrected source cache does not match current corrections')
         if manifest.get('middle_sha256') != digest(directory / 'middle_json.json'):
             raise ValueError('Corrected source cache changed')
@@ -236,6 +267,8 @@ def materialize_source(index, directory):
             if kind == first['block_type'] and kind not in {'equation', 'image_body', 'table_body'}:
                 kind = 'text'
             node = dict(type=kind, content=atom['content'], bbox=atom.get('bbox'))
+            if atom.get('source_text_runs'):
+                node['source_text_runs'] = deepcopy(atom['source_text_runs'])
             if atom.get('asset'):
                 asset = Path(atom['asset'])
                 relative = asset.relative_to(origin)
@@ -245,14 +278,35 @@ def materialize_source(index, directory):
                     try: os.link(asset, target)
                     except OSError: shutil.copy2(asset, target)
                 node['image_path'] = str(target.relative_to(directory))
+            # Inline equations inherit their role from their parent in the
+            # common schema. Preserve caption/code ownership across a round
+            # trip instead of turning a caption variable into body text.
+            if atom['kind'] == 'math' and atom['role'] != first['block_type']:
+                node = dict(type=atom['role'], content=[node])
             nodes.append(node)
         page = pages[first['page']]
-        page['blocks'].append(dict(index=len(page['blocks']), type=first['block_type'],
-                                   bbox=first.get('block_bbox'), level=first.get('level_hint'), content=nodes))
+        block = dict(index=len(page['blocks']), type=first['block_type'],
+                     bbox=first.get('block_bbox'), level=first.get('level_hint'), content=nodes)
+        if first.get('source_panel'):
+            block.update(source_panel=first['source_panel'], source_panel_title=first.get('source_panel_title',False))
+        for key in ('writing_direction', 'ocr_table_recovery', 'recovery_issue', 'source_prose_end_bbox'):
+            if first.get(key): block[key] = first[key]
+        page['blocks'].append(block)
+    page_count = index.source.get('source_page_count')
+    if page_count is None:
+        # Older saved SourceIndex objects may predate this metadata. Verify
+        # against the original PDF rather than guessing from recognized pages.
+        import pymupdf
+        with pymupdf.open(index.source['source_pdf']) as document:
+            page_count = len(document)
+    complete = sorted(pages) == list(range(page_count))
     save(directory / 'middle_json.json', dict(schema='docvortex.middle', schema_version='2.0',
-         is_full_document=True, pages=list(pages.values())))
+         is_full_document=complete, pages=list(pages.values())))
     manifest = read(origin / 'manifest.json')
     save(manifest_path, {**manifest, 'corrected_source_sha256':stamp,
+                        'source_page_numbers':[n+1 for n in sorted(pages)],
+                        'is_full_document':complete,
+                        'materialization_method':MATERIALIZATION_METHOD,
                         'formula_corrections':index.source.get('formula_corrections'),
                         'middle_sha256':digest(directory / 'middle_json.json')})
     return directory
