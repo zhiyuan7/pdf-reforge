@@ -2,8 +2,49 @@
   "version": 1,
   "batch": "next-modern-math-ai-20261028",
   "status": "acquired_pending_current_batch_completion",
-  "distinct_works": 5,
+  "distinct_works": 6,
   "books": [
+    {
+      "id": "prince-understanding-deep-learning",
+      "work_id": "prince-understanding-deep-learning",
+      "title": "Understanding Deep Learning",
+      "author": "Simon J. D. Prince",
+      "language": "en",
+      "topic": "deep_learning",
+      "url": "https://github.com/udlbook/udlbook/releases/download/v5.0.3/UnderstandingDeepLearning_02_09_26_C.pdf",
+      "source_page": "https://udlbook.github.io/udlbook/",
+      "release": "v5.0.3",
+      "release_published_at": "2026-02-09T20:00:36Z",
+      "rights": "CC BY-NC-ND 4.0, as specified by the official repository; local noncommercial evaluation and adapted outputs only, no redistribution of adapted material.",
+      "local_path": "output/benchmark/sources/prince-understanding-deep-learning.pdf",
+      "bytes": 22344992,
+      "sha256": "f8237d393163900fa8e43210e680a3f987b45ccac7750b372e156fae3df0bf32",
+      "status": "downloaded_not_converted",
+      "priority": "user_requested_next_batch_first",
+      "artifact_success": false,
+      "quality_pass": false,
+      "variants": [
+        "native"
+      ],
+      "pdf_pages": 541,
+      "source_type": "born_digital",
+      "preflight": "output/benchmark/next-batch/udl-preflight.json",
+      "layout_features": [
+        "single_main_column_with_outer_margin_notes",
+        "side_figure_captions",
+        "colored_plots",
+        "dense_numbered_display_math",
+        "linked_problem_notebook_appendix_notes",
+        "bold_and_italic_emphasis",
+        "printer_crop_marks"
+      ],
+      "layout_review_scope": "Physical PDF pages30,80,170,250,350,450 visually inspected; no conversion or quality pass.",
+      "candidate_sample_pages": [
+        80,
+        250,
+        350
+      ]
+    },
     {
       "id": "boyd-convex-optimization",
       "title": "Convex Optimization",
@@ -166,5 +207,13 @@
   "coverage_gaps": [
     "No newly acquired real scan in this queued set; current PDC true scan remains active.",
     "Continuous double-column body still unverified."
+  ],
+  "priority_order": [
+    "prince-understanding-deep-learning",
+    "boyd-convex-optimization",
+    "lehman-mathematics-for-computer-science",
+    "qiu-neural-networks-deep-learning",
+    "mackay-information-theory",
+    "james-introduction-statistical-learning"
   ]
 }
