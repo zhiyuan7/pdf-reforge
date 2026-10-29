@@ -138,6 +138,12 @@ def normalize_written_numbers(source, translated):
                 words=words[1:]
     decades=dict(zip('twenties thirties forties fifties sixties seventies eighties nineties'.split(),range(20,100,10)))
     known.update(decades[m[0].casefold()] for m in re.finditer(r'\b(?:'+'|'.join(decades)+r')\b',source,re.I))
+    # A scalar attached to a standard unit is not a free-standing numeral in
+    # the original protector (unlike variables such as 2t). MT may spell its
+    # unit out; only its exact source value/count can become Chinese digits.
+    units=r'ns|us|µs|μs|ms|s|mm|cm|km|m|kg|g|Hz|kHz|MHz|GHz|MB|GB|TB|bits?|fps'
+    known.update(int(m[1]) for m in re.finditer(
+        r'(?<![A-Za-z0-9_])(\d+)(?:'+units+r')(?![A-Za-z0-9_])',source))
     def replace(match):
         if not re.fullmatch(r'\d+|\d{1,3}(?:,\d{3})+', match[0]):
             return match[0]
@@ -255,9 +261,13 @@ class VolcengineTranslationClient:
             raise DecisionUncertain('火山译文没有可安全分离的保护内容')
         pattern=re.compile('('+'|'.join(re.escape(t) for t in literals)+')')
         parts=[]
+        term_queues={value:iter(names) for value,names in visible_terms.items()}
         source_parts=pattern.split(text)
         for number,part in enumerate(source_parts):
-            if part in protected or part in visible_terms or not re.search(r'[A-Za-z]',part):
+            if part in visible_terms:
+                parts.append('⟪TERM:'+next(term_queues[part])+'⟫')
+                continue
+            if part in protected or not re.search(r'[A-Za-z]',part):
                 parts.append(part)
                 continue
             leading=part[:len(part)-len(part.lstrip())]
@@ -419,10 +429,12 @@ class VolcengineTranslationClient:
             from book_pipeline.ingestion.translation import author_names_only
             untranslated=(bool(protected or visible_terms) and not re.search(r'[\u3400-\u9fff]',result)
                           and len(re.findall(r'[A-Za-z]+',item['text']))>4 and not author_names_only(original))
+            segmented=False
             if (Counter(re.findall(r'ZXQREF\d{6}QXZ', result)) != Counter(protected.keys())
                     or (pattern and Counter(m[0] for m in pattern.finditer(result)) != expected_terms)
                     or untranslated):
                 result=self._translate_segments(prepared_text,protected,visible_terms,item,result)
+                segmented=True
             if Counter(re.findall(r'ZXQREF\d{6}QXZ', result)) != Counter(protected.keys()):
                 save(self.cache/'invalid'/(fingerprint(dict(item=item,result=result))+'.json'),
                      dict(validation_error='opaque_placeholder_identity_or_count', item=item,
@@ -431,11 +443,16 @@ class VolcengineTranslationClient:
             for token, value in protected.items():
                 result = result.replace(token, value)
             if visible_terms:
-                actual=Counter(m[0] for m in pattern.finditer(result))
-                if actual != expected_terms:
-                    raise DecisionUncertain('火山翻译改变了规范术语或其出现次数')
-                queues={text:iter(names) for text,names in visible_terms.items()}
-                result=pattern.sub(lambda m:'⟪TERM:'+next(queues[m[0]])+'⟫',result)
+                if segmented:
+                    actual=Counter(re.findall(r'⟪TERM:([^⟫]+)⟫',result))
+                    if actual != Counter(name for names in visible_terms.values() for name in names):
+                        raise DecisionUncertain('分段重译改变了本地保留的术语标记')
+                else:
+                    actual=Counter(m[0] for m in pattern.finditer(result))
+                    if actual != expected_terms:
+                        raise DecisionUncertain('火山翻译改变了规范术语或其出现次数')
+                    queues={text:iter(names) for text,names in visible_terms.items()}
+                    result=pattern.sub(lambda m:'⟪TERM:'+next(queues[m[0]])+'⟫',result)
             result = normalize_written_numbers(item['text'], result)
             output.append(dict(id=item['id'], text=result))
         answer = dict(items=output, terms=terms)

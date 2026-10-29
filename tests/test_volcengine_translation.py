@@ -89,10 +89,25 @@ class VolcengineTests(unittest.TestCase):
         self.assertEqual(translator.translate([dict(id='a',text='Convolutional networks for inputs')])['a'],
                          '卷积网络（convolutional networks）用于输入')
         self.assertEqual(seen,['卷积网络 for inputs'])
-        for result in ['卷积网络用于卷积网络输入','卷积网用于输入 42']:
+        for result in ['卷积网络用于卷积网络输入 42','卷积网用于输入 42']:
             def changed(body):return dict(TranslationList=[dict(Translation=result)])
             translator=Translator(self.client('changed-'+str(len(result)),transport=changed),{'convolutional networks':'卷积网络'})
             with self.assertRaises(DecisionUncertain):translator.translate([dict(id='a',text='Convolutional networks for inputs')])
+
+    def test_compound_prose_terms_do_not_count_as_extra_locally_preserved_terms(self):
+        calls=[]
+        def response(body):
+            calls.extend(body['TextList'])
+            values={'Use 训练数据 and training datasets':'使用训练数据和训练数据集',
+                    'Use':'使用','and training datasets':'和训练数据集'}
+            return dict(TranslationList=[dict(Translation=values[text]) for text in body['TextList']])
+        client=self.client('compound-terms',transport=response)
+        result=Translator(client,{'training data':'训练数据'}).translate([
+            dict(id='a',text='Use training data and training datasets')])['a']
+        self.assertIn('训练数据（training data）',result)
+        self.assertIn('训练数据集',result)
+        self.assertEqual(result.count('（training data）'),1)
+        self.assertTrue(list((client.cache/'integrity_fallbacks').glob('*.json')))
 
     def test_damaged_numeric_tokens_never_enter_fallback_prose_requests(self):
         for prose,passes in [('标题',True),('16 标题 276',False)]:
@@ -173,6 +188,9 @@ class VolcengineTests(unittest.TestCase):
         self.assertEqual(normalize_written_numbers('between zero and one','在0和1之间'),'在零和一之间')
         self.assertEqual(normalize_written_numbers('twenty-five and six','25和6'),'二十五和六')
         self.assertEqual(normalize_written_numbers('one hundred and two and three','102和3'),'一百零二和三')
+        self.assertEqual(normalize_written_numbers('10ms of audio','10毫秒的音频'),'十毫秒的音频')
+        self.assertEqual(normalize_written_numbers('10ms of audio','11毫秒的音频'),'11毫秒的音频')
+        self.assertEqual(normalize_written_numbers('a variable 2t','2 t'),'2 t')
 
     def test_terminal_repeat_count_suffix_does_not_become_an_unrelated_number(self):
         calls=[]
