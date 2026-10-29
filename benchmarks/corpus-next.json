@@ -1,219 +1,496 @@
 {
-  "version": 1,
-  "batch": "next-modern-math-ai-20261028",
-  "status": "acquired_pending_current_batch_completion",
+  "id": "modern-math-ai-20261029",
+  "created_at": "2026-10-29T04:30:59.235200+08:00",
+  "status": "three_of_six_declared_excerpts_passed",
   "distinct_works": 6,
+  "topics": [
+    "ai_decision_making",
+    "discrete_mathematics",
+    "machine_learning_mathematics",
+    "mathematical_analysis",
+    "optimization",
+    "probability"
+  ],
   "books": [
     {
-      "id": "prince-understanding-deep-learning",
-      "work_id": "prince-understanding-deep-learning",
-      "title": "Understanding Deep Learning",
-      "author": "Simon J. D. Prince",
+      "id": "strang-calculus",
+      "title": "Calculus（1991版第二章扫描包）",
+      "author": "Gilbert Strang",
       "language": "en",
-      "topic": "deep_learning",
-      "url": "https://github.com/udlbook/udlbook/releases/download/v5.0.3/UnderstandingDeepLearning_02_09_26_C.pdf",
-      "source_page": "https://udlbook.github.io/udlbook/",
-      "release": "v5.0.3",
-      "release_published_at": "2026-02-09T20:00:36Z",
-      "rights": "CC BY-NC-ND 4.0, as specified by the official repository; local noncommercial evaluation and adapted outputs only, no redistribution of adapted material.",
-      "local_path": "output/benchmark/sources/prince-understanding-deep-learning.pdf",
-      "bytes": 22344992,
-      "sha256": "f8237d393163900fa8e43210e680a3f987b45ccac7750b372e156fae3df0bf32",
-      "status": "downloaded_not_converted",
-      "priority": "user_requested_next_batch_first",
-      "artifact_success": false,
-      "quality_pass": false,
+      "topic": "mathematical_analysis",
+      "publication_year": 1991,
+      "url": "https://mitocw.ups.edu.ec/resources/res-18-001-calculus-online-textbook-spring-2005/textbook/MITRES_18_001_strang_2.pdf",
+      "source_page": "https://mitocw.ups.edu.ec/resources/res-18-001-calculus-online-textbook-spring-2005/textbook/",
+      "rights": "Current native author textbook distributed by MIT OCW;local evaluation. Legacy scanned chapter supplied through university OCW mirror;copyright and licence evidence recorded separately,no broader licence assumed.",
+      "source_type": "real_scan_with_unreliable_hidden_ocr",
+      "local_path": "output/benchmark/sources/strang-calculus.pdf",
+      "bytes": 4022937,
+      "sha256": "0b3cc857ef51e9fa784956479474d82626b7ef58719de0e301f1e2aefa213ca8",
+      "resolved_url": "https://mitocw.ups.edu.ec/resources/res-18-001-calculus-online-textbook-spring-2005/textbook/MITRES_18_001_strang_2.pdf",
+      "status": "scoped_artifact_and_quality_pass_with_reviewed_styles",
+      "artifact_success": true,
+      "quality_pass": true,
+      "pdf_pages": 49,
+      "native_layer_check": {
+        "full_page_raster_fraction": 1.0,
+        "body_pages_checked": 47,
+        "median_text_characters": 2597,
+        "text_layer_type": "unreliable_hidden_ocr_over_original_scan",
+        "visible_body_is_raster": true
+      },
+      "preflight": "output/benchmark/preflight/strang-real-scan-cpu-v236/preflight.json",
+      "original_work_year": 1991,
+      "canonical_budget_sha256": "0b3cc857ef51e9fa784956479474d82626b7ef58719de0e301f1e2aefa213ca8",
+      "candidate_pages": [
+        3,
+        4
+      ],
+      "selected_source_pdf": "output/benchmark/sources/strang-calculus.pdf",
+      "selected_source_sha256": "0b3cc857ef51e9fa784956479474d82626b7ef58719de0e301f1e2aefa213ca8",
+      "real_scanned_book": true,
+      "controlled_rasterization": false,
+      "native_companion": {
+        "url": "https://ocw.mit.edu/courses/res-18-001-calculus-fall-2023/mitres_18_001_f17_full_book.pdf",
+        "resolved_url": "https://ocw.mit.edu/courses/res-18-001-calculus-fall-2023/mitres_18_001_f17_full_book.pdf",
+        "local_path": "output/benchmark/sources/strang-calculus-native-companion.pdf",
+        "bytes": 12619147,
+        "sha256": "e9bc46d0663bf59134e45eee296ad244985b397b3957e4d66d90b62e0f089803",
+        "pdf_pages": 706,
+        "native_layer_check": {
+          "body_pages_checked": 691,
+          "full_page_raster_fraction": 0.0,
+          "median_text_characters": 2421,
+          "image_only_body_pages": 0
+        },
+        "title": "Calculus, Third Edition",
+        "source_type": "born_digital",
+        "evaluation_status": "extra_same_work_source_not_queued",
+        "independent_work": false,
+        "canonical_budget_sha256": "0b3cc857ef51e9fa784956479474d82626b7ef58719de0e301f1e2aefa213ca8"
+      },
+      "budget_identity_note": "All excerpts and any same-work native-companion regression share the acquired original49-page scan-package SHA. That SHA identifies the complete downloaded PDF,not a complete scanned printed book. Before any paid call,the zero-API CPU-preflight placeholder(native companion SHA) was normalized to the selected primary source SHA;neither identity has ledger entries and no ledger row was modified.",
+      "download_scope": "49-page original university OCW chapter package:scanned Chapter2,contents and OCW notice;not a complete scan of the printed book.",
+      "scan_noise": "Original monochrome scan:isolated specks,uneven/heavy ink and slight page/line tilt;no quantitative deskew estimate asserted.",
+      "pages": [
+        3,
+        4
+      ],
       "variants": [
-        "native"
+        "scan"
       ],
-      "pdf_pages": 541,
-      "source_type": "born_digital",
-      "preflight": "output/benchmark/next-batch/udl-preflight.json",
-      "layout_features": [
-        "single_main_column_with_outer_margin_notes",
-        "side_figure_captions",
-        "colored_plots",
-        "dense_numbered_display_math",
-        "linked_problem_notebook_appendix_notes",
-        "bold_and_italic_emphasis",
-        "printer_crop_marks"
+      "printed_pages": [
+        45,
+        46
       ],
-      "layout_review_scope": "Physical PDF pages30,80,170,250,350,450 visually inspected; no conversion or quality pass.",
-      "candidate_sample_pages": [
-        80,
-        250,
-        350
-      ]
-    },
-    {
-      "id": "boyd-convex-optimization",
-      "title": "Convex Optimization",
-      "author": "Stephen Boyd; Lieven Vandenberghe",
-      "language": "en",
-      "topic": "optimization",
-      "url": "https://web.stanford.edu/~boyd/cvxbook/bv_cvxbook.pdf",
-      "source_page": "https://web.stanford.edu/~boyd/cvxbook/",
-      "rights": "Author-hosted with Cambridge University Press permission; local evaluation only.",
-      "local_path": "output/benchmark/sources/boyd-convex-optimization.pdf",
-      "bytes": 6881335,
-      "sha256": "40d976c83c18cce1900eff8c41bd5ad408c102b813af39d05ff85678ccf8d76e",
-      "status": "downloaded_not_converted",
-      "pdf_pages": 714,
-      "source_type": "born_digital",
-      "preflight": "output/benchmark/next-batch/preflight.json",
-      "layout_features": [
-        "single_column",
-        "dense_display_math",
-        "linked_bibliography"
-      ],
-      "layout_review_scope": "Physical PDF page30 visual check only; representative conversion pages not yet selected.",
-      "artifact_success": false,
-      "quality_pass": false,
-      "variants": [
-        "native"
-      ]
-    },
-    {
-      "id": "lehman-mathematics-for-computer-science",
-      "title": "Mathematics for Computer Science",
-      "author": "Eric Lehman; F. Thomson Leighton; Albert R. Meyer",
-      "language": "en",
-      "topic": "discrete_mathematics",
-      "url": "https://courses.csail.mit.edu/6.042/spring18/mcs.pdf",
-      "source_page": "https://courses.csail.mit.edu/6.042/spring18/",
-      "rights": "Author/MIT-hosted textbook; verify licence in downloaded front matter before redistribution.",
-      "local_path": "output/benchmark/sources/lehman-mathematics-for-computer-science.pdf",
-      "bytes": 13269308,
-      "sha256": "ea4ced500d4a4bae7beb7a72ae9784abb96ed656ad905976f54c828cf6337dc1",
-      "status": "downloaded_not_converted",
-      "pdf_pages": 1048,
-      "source_type": "born_digital",
-      "preflight": "output/benchmark/next-batch/preflight.json",
-      "layout_features": [
-        "single_column",
-        "proofs_and_problem_labels",
-        "multiline_aligned_equations",
-        "black_proof_end_marks"
-      ],
-      "layout_review_scope": "Physical PDF page30 visual check only; representative conversion pages not yet selected.",
-      "artifact_success": false,
-      "quality_pass": false,
-      "variants": [
-        "native"
-      ]
-    },
-    {
-      "id": "qiu-neural-networks-deep-learning",
-      "title": "神经网络与深度学习（第一版）",
-      "author": "邱锡鹏",
-      "language": "zh",
-      "topic": "deep_learning",
-      "url": "https://raw.githubusercontent.com/nndl/nndl/main/legacy/nndl-v1/main.pdf",
-      "source_page": "https://github.com/nndl/nndl",
-      "rights": "Author-maintained repository; local evaluation only; no redistribution licence asserted.",
-      "local_path": "output/benchmark/sources/qiu-neural-networks-deep-learning.pdf",
-      "bytes": 6549956,
-      "sha256": "db5504e8400d2bbe54ba22a1e5e1f67366e04842a1ef24c156ce762971bb4d1a",
-      "status": "downloaded_not_converted",
-      "pdf_pages": 444,
-      "source_type": "born_digital",
-      "preflight": "output/benchmark/next-batch/preflight.json",
-      "layout_features": [
-        "chinese_main_column_with_margin_notes",
-        "colored_emphasis_and_links",
-        "latin_names_in_chinese_prose"
-      ],
-      "layout_review_scope": "Physical PDF page30 visual check only; representative conversion pages not yet selected.",
-      "artifact_success": false,
-      "quality_pass": false,
-      "variants": [
-        "native"
-      ]
-    },
-    {
-      "id": "mackay-information-theory",
-      "title": "Information Theory, Inference, and Learning Algorithms",
-      "author": "David J. C. MacKay",
-      "language": "en",
-      "topic": "information_theory",
-      "url": "https://www.inference.org.uk/itprnn/book.pdf",
-      "source_page": "https://www.inference.org.uk/mackay/itila/book.html",
-      "rights": "Author-hosted electronic textbook; local evaluation only; no redistribution licence asserted.",
-      "local_path": "output/benchmark/sources/mackay-information-theory.pdf",
-      "bytes": 11675219,
-      "sha256": "868adc5f0ef6630366b122d88d691acfbe8339978b4ec3f38fca5e231f135791",
-      "status": "downloaded_not_converted",
-      "pdf_pages": 640,
-      "source_type": "born_digital",
-      "preflight": "output/benchmark/next-batch/preflight.json",
+      "sample_id": "strang-calculus-real-scan",
+      "sample_pdf": "output/benchmark/samples/strang-calculus-real-scan.pdf",
       "layout_features": [
         "single_main_column",
-        "numbered_multiline_equations",
-        "large_binary_matrices"
+        "dense_notation_glossary_with_inline_math",
+        "numbered_equations_3_and_4",
+        "three_plot_figure_and_caption",
+        "mixed_bold_and_italic",
+        "original_scan_noise_and_unreliable_hidden_ocr"
       ],
-      "layout_review_scope": "Physical PDF page30 visual check only; representative conversion pages not yet selected.",
-      "artifact_success": false,
-      "quality_pass": false,
-      "variants": [
-        "native"
-      ]
+      "selected_scope": "Scan package physical3–4 / printed45–46 only;3 reconstructed pages.20 source-bound emphasis annotations. No full-book or continuous-double-column claim.",
+      "preflight_issues": [
+        "Top-margin running header 2 Derivatives was classified paragraph_title on sample page2. Existing cross-page marginal recovery only accepts a lower header band;requires a general fix and focused tests.",
+        "Quotation marks in notation/glossary displays were transcribed as primes or unstructured math/text. Independent formula review and source comparison required before acceptance."
+      ],
+      "review": "output/automation/iterations/20261029-080001/strang-validation.json",
+      "source_images": [
+        "output/automation/iterations/20261029-040003/strang-calculus-selected-p3.png",
+        "output/automation/iterations/20261029-040003/strang-calculus-selected-p4.png"
+      ],
+      "budget_source_aliases": [
+        "e9bc46d0663bf59134e45eee296ad244985b397b3957e4d66d90b62e0f089803"
+      ],
+      "output": "output/benchmark/runs/modern-scan-v241-bounded-fraction-chain/results.json",
+      "full_original_available": false,
+      "original_full_removed": true,
+      "minimal_regression_pdf": "output/benchmark/samples/strang-calculus-real-scan.pdf",
+      "minimal_regression_sha256": "ce4e37a7fa4539bb2c2011df548d2bdf899eebfd788daa4cd6a7982436dceaa3",
+      "cleanup_receipt": "output/automation/cleanup-20261029-strang.json",
+      "local_retention": "Primary49-page chapter scan and706-page native companion removed after declared3–4 scan scope pass. Keep original source/SHA records and minimal true-scan excerpt. Do not automatically redownload either source."
     },
     {
-      "id": "james-introduction-statistical-learning",
-      "title": "An Introduction to Statistical Learning with Applications in R, first edition, seventh printing",
-      "author": "Gareth James; Daniela Witten; Trevor Hastie; Robert Tibshirani",
+      "id": "grinstead-snell-probability",
+      "title": "Introduction to Probability",
+      "author": "Charles M. Grinstead; J. Laurie Snell",
       "language": "en",
-      "topic": "statistical_learning",
-      "url": "https://www.statlearning.com/s/ISLR-Seventh-Printing.pdf",
-      "resolved_url": "https://static1.squarespace.com/static/5ff2adbe3fe4fe33db902812/t/6009dd9fa7bc363aa822d2c7/1611259312432/ISLR+Seventh+Printing.pdf",
-      "source_page": "https://www.statlearning.com/",
-      "rights": "Official book website provides free PDF download; local evaluation only; copyright retained.",
-      "local_path": "output/benchmark/sources/james-introduction-statistical-learning.pdf",
-      "bytes": 11237547,
-      "sha256": "dd6997f961a132293e79cdf1b4969be666dcd4a1660fc5716691b46e29e118f9",
-      "status": "downloaded_not_converted",
-      "pdf_pages": 441,
+      "topic": "probability",
+      "publication_year": 1997,
+      "url": "https://chance.dartmouth.edu/teaching_aids/books_articles/probability_book/amsbook.mac.pdf",
+      "source_page": "https://chance.dartmouth.edu/teaching_aids/books_articles/probability_book/book.html",
+      "rights": "Author page explicitly announces Introduction to Probability as freely redistributable under GNU FDL and links both the selected original AMS PDF and a separate GNU edition. The selected amsbook.mac.pdf front matter has no explicit FDL-version notice; no different PDF edition was substituted.",
       "source_type": "born_digital",
-      "preflight": "output/benchmark/next-batch/preflight.json",
-      "layout_features": [
-        "main_column_with_margin_notes",
-        "blue_chapter_and_section_headings",
-        "colored_inline_keywords",
-        "footnotes"
+      "local_path": "output/benchmark/sources/grinstead-snell-probability.pdf",
+      "bytes": 3206007,
+      "sha256": "6ab360d0d3586745c8d49e54eddafe5c4776209652b9ec71104749b5fbfcb284",
+      "resolved_url": "https://chance.dartmouth.edu/teaching_aids/books_articles/probability_book/amsbook.mac.pdf",
+      "status": "scoped_artifact_and_quality_pass",
+      "artifact_success": true,
+      "quality_pass": true,
+      "pdf_pages": 520,
+      "native_layer_check": {
+        "body_pages_checked": 505,
+        "full_page_raster_fraction": 0.0,
+        "median_text_characters": 1932,
+        "image_only_body_pages": 2
+      },
+      "preflight": "output/automation/iterations/20261029-040003/next-preflight.json",
+      "candidate_pages": [
+        195,
+        196
       ],
-      "layout_review_scope": "Physical PDF page30 visual check only; representative conversion pages not yet selected.",
-      "artifact_success": false,
-      "quality_pass": false,
+      "selected_source_pdf": "output/benchmark/sources/grinstead-snell-probability.pdf",
+      "selected_source_sha256": "6ab360d0d3586745c8d49e54eddafe5c4776209652b9ec71104749b5fbfcb284",
+      "real_scanned_book": false,
+      "controlled_rasterization": false,
       "variants": [
         "native"
-      ]
+      ],
+      "pages": [
+        195,
+        196
+      ],
+      "printed_pages": [
+        185,
+        186
+      ],
+      "layout_features": [
+        "single_column_english",
+        "paired_geometric_distribution_plots",
+        "ceil_delimiters",
+        "dense_numbered_and_unnumbered_probability_formulas",
+        "cross_page_derivation",
+        "example_end_square"
+      ],
+      "source_images": [
+        "output/automation/iterations/20261029-040003/grinstead-snell-probability-selected-p195.png",
+        "output/automation/iterations/20261029-040003/grinstead-snell-probability-selected-p196.png"
+      ],
+      "source_image_review": "Selected original pages visually checked;native text,not a real scan or continuous two-column body.",
+      "selected_scope": "Original PDF195–196 / printed185–186 only;2 reconstructed pages. Excerpt begins mid-argument and ends with the original partial paragraph ending We. Not full-book success.",
+      "canonical_budget_sha256": "6ab360d0d3586745c8d49e54eddafe5c4776209652b9ec71104749b5fbfcb284",
+      "rights_source": "https://chance.dartmouth.edu/teaching_aids/books_articles/probability_book/book.html",
+      "rights_verified_at": "2026-10-29T08:27:32.344732+08:00",
+      "rights_evidence": "output/automation/iterations/20261029-080001/probability-author-page.html",
+      "output": "output/benchmark/runs/next-v243-native-hyphen-review/results.json",
+      "review": "output/automation/iterations/20261029-080001/probability-validation.json",
+      "settled_conservative_cny": 0.358064928,
+      "full_original_available": false,
+      "original_full_removed": true,
+      "minimal_regression_pdf": "output/benchmark/samples/grinstead-snell-probability-native.pdf",
+      "minimal_regression_sha256": "48925f450d48d7162a4335433084453ee9921bfabc8134958ed5c232254bb291",
+      "cleanup_receipt": "output/automation/cleanup-20261029-probability.json",
+      "local_retention": "Full original removed after declared195–196 scope pass. Keep source/SHA, licence evidence,minimal native excerpt and current output. Do not automatically redownload."
+    },
+    {
+      "id": "hammack-book-of-proof",
+      "title": "Book of Proof, Third Edition 3.4",
+      "author": "Richard Hammack",
+      "language": "en",
+      "topic": "discrete_mathematics",
+      "publication_year": 2018,
+      "url": "https://richardhammack.github.io/BookOfProof/Main.pdf",
+      "source_page": "https://richardhammack.github.io/BookOfProof/",
+      "rights": "CC BY-NC-ND4.0 per author page; personal local evaluation, no redistribution of modified PDF.",
+      "source_type": "born_digital",
+      "local_path": "output/benchmark/sources/hammack-book-of-proof.pdf",
+      "bytes": 1841432,
+      "sha256": "e0e471ca794ddda7bc46704b22885e1582350b7fc5881f8ba9a61b3747ec79fd",
+      "resolved_url": "https://richardhammack.github.io/BookOfProof/Main.pdf",
+      "status": "scoped_artifact_and_quality_pass_with_reviewed_table_styles",
+      "artifact_success": true,
+      "quality_pass": true,
+      "pdf_pages": 380,
+      "native_layer_check": {
+        "body_pages_checked": 365,
+        "full_page_raster_fraction": 0.0,
+        "median_text_characters": 2025,
+        "image_only_body_pages": 6
+      },
+      "preflight": "output/automation/iterations/20261029-040003/next-preflight.json",
+      "candidate_pages": [
+        60,
+        61
+      ],
+      "selected_source_pdf": "output/benchmark/sources/hammack-book-of-proof.pdf",
+      "selected_source_sha256": "e0e471ca794ddda7bc46704b22885e1582350b7fc5881f8ba9a61b3747ec79fd",
+      "real_scanned_book": false,
+      "controlled_rasterization": false,
+      "variants": [
+        "native"
+      ],
+      "pages": [
+        60,
+        61
+      ],
+      "printed_pages": [
+        48,
+        49
+      ],
+      "layout_features": [
+        "single_column_english",
+        "ruled_truth_tables_4_and_8_rows",
+        "logical_connectives",
+        "bold_result_column",
+        "italic_explanatory_statement"
+      ],
+      "source_images": [
+        "output/automation/iterations/20261029-040003/hammack-book-of-proof-selected-p60.png",
+        "output/automation/iterations/20261029-040003/hammack-book-of-proof-selected-p61.png"
+      ],
+      "source_image_review": "Selected original pages visually checked;native text,not a real scan or continuous two-column body.",
+      "selected_scope": "Only original PDF60–61 / printed48–49;2 output pages. Native PDF used CPU table fallback;source-bound native rendering recovery and reviewed table typography. No full-book/real-scan/double-column claim.",
+      "canonical_budget_sha256": "e0e471ca794ddda7bc46704b22885e1582350b7fc5881f8ba9a61b3747ec79fd",
+      "output": "output/benchmark/runs/next-v251-native-prose-final/results.json",
+      "review": "output/automation/iterations/20261029-090002/proof-validation.json",
+      "full_original_available": false,
+      "original_full_removed": true,
+      "minimal_regression_pdf": "output/benchmark/samples/hammack-book-of-proof-native.pdf",
+      "minimal_regression_sha256": "ee17063970d997d8f6f968214f2e79feaa18b96a037d05965c1cb4cd19d7734a",
+      "cleanup_receipt": "output/automation/cleanup-20261029-hammack.json",
+      "local_retention": "Full source and duplicate local renders removed after declared60–61 scope pass. Retain author source/SHA,minimal sample,raw stage evidence and current reviewed output. Do not automatically redownload.",
+      "settled_conservative_cny": 0.09261215999999999,
+      "unknown_or_reserved_cny": 2.5173503999999998
+    },
+    {
+      "id": "liu-hu-li-wen-optimization",
+      "title": "最优化：建模、算法与理论（第一版作者版本）",
+      "author": "刘浩洋；户将；李勇锋；文再文",
+      "language": "zh",
+      "topic": "optimization",
+      "publication_year": 2021,
+      "url": "https://faculty.bicmr.pku.edu.cn/~wenzw/optbook/opt1.pdf",
+      "source_page": "https://faculty.bicmr.pku.edu.cn/~wenzw/optbook.html",
+      "rights": "Author explicitly offers this PDF;copyright retained,no open licence asserted;local evaluation only.",
+      "source_type": "born_digital",
+      "local_path": "output/benchmark/sources/liu-hu-li-wen-optimization.pdf",
+      "bytes": 8780914,
+      "sha256": "a28e671e5e98b6f763d6f4c536334f6f0ff055674400b011af07f85a43974295",
+      "resolved_url": "https://faculty.bicmr.pku.edu.cn/~wenzw/optbook/opt1.pdf",
+      "status": "scoped_artifact_and_quality_pass_with_reviewed_periods",
+      "artifact_success": true,
+      "quality_pass": true,
+      "pdf_pages": 581,
+      "native_layer_check": {
+        "body_pages_checked": 566,
+        "full_page_raster_fraction": 0.0,
+        "median_text_characters": 802,
+        "image_only_body_pages": 0
+      },
+      "preflight": "output/automation/iterations/20261029-040003/next-preflight.json",
+      "candidate_pages": [
+        241,
+        242
+      ],
+      "selected_source_pdf": "output/benchmark/sources/liu-hu-li-wen-optimization.pdf",
+      "selected_source_sha256": "a28e671e5e98b6f763d6f4c536334f6f0ff055674400b011af07f85a43974295",
+      "real_scanned_book": false,
+      "controlled_rasterization": false,
+      "variants": [
+        "native"
+      ],
+      "pages": [
+        241,
+        242
+      ],
+      "printed_pages": [
+        225,
+        226
+      ],
+      "layout_features": [
+        "single_column_chinese",
+        "gradient_descent_contour_plot",
+        "numbered_theorems_and_proof",
+        "dense_vector_norms_and_aligned_inequalities",
+        "colored_cross_references",
+        "cross_page_theorem"
+      ],
+      "source_images": [
+        "output/automation/iterations/20261029-040003/liu-hu-li-wen-optimization-selected-p241.png",
+        "output/automation/iterations/20261029-040003/liu-hu-li-wen-optimization-selected-p242.png"
+      ],
+      "source_image_review": "Selected original pages visually checked;native text,not a real scan or continuous two-column body.",
+      "selected_scope": "Only physicalPDF241–242 / printed225–226;two output pages. Native Chinese PDF with reused CPU OCR supplement,not a true scan or full-book result.",
+      "canonical_budget_sha256": "a28e671e5e98b6f763d6f4c536334f6f0ff055674400b011af07f85a43974295",
+      "sample_pdf": "output/benchmark/samples/liu-hu-li-wen-optimization-native.pdf",
+      "sample_sha256": "1c9d0e1b7c04525eba1a826b9fda98aab418a47b717cd8267fbeb25597ebee1b",
+      "cpu_preflight": "output/automation/iterations/20261029-100001/optimization-preflight.md",
+      "cpu_cache": "output/benchmark/preflight/optimization-native-cpu-v253-both",
+      "cpu_cache_validation": "output/automation/iterations/20261029-110002/optimization-cache-ready.json",
+      "output": "output/benchmark/runs/next-v255-native-chinese-complete/results.json",
+      "review": "output/automation/iterations/20261029-130001/optimization-validation.json",
+      "full_original_available": false,
+      "original_full_removed": true,
+      "minimal_regression_pdf": "output/benchmark/samples/liu-hu-li-wen-optimization-native.pdf",
+      "cleanup_receipt": "output/automation/cleanup-20261029-optimization.json",
+      "local_retention": "Full source and duplicate renders removed after declared241–242 scope pass. Keep source/SHA,minimal excerpt,current reviewed PDF/LaTeX and required raw stages. Do not automatically redownload."
+    },
+    {
+      "id": "deisenroth-mathematics-machine-learning",
+      "title": "Mathematics for Machine Learning",
+      "author": "Marc Peter Deisenroth; A. Aldo Faisal; Cheng Soon Ong",
+      "language": "en",
+      "topic": "machine_learning_mathematics",
+      "publication_year": 2020,
+      "url": "https://mml-book.github.io/book/mml-book.pdf",
+      "source_page": "https://mml-book.github.io/",
+      "rights": "Authors keep PDF freely available;Cambridge University Press copyright2020;local evaluation,no open derivative licence asserted.",
+      "source_type": "born_digital",
+      "local_path": "output/benchmark/sources/deisenroth-mathematics-machine-learning.pdf",
+      "bytes": 17565898,
+      "sha256": "3f87b70c64a35d30ec4e565b4d5cfd18fe913002d3b3bed44691c7d0838911bc",
+      "resolved_url": "https://mml-book.github.io/book/mml-book.pdf",
+      "status": "scoped_artifact_and_quality_pass",
+      "artifact_success": true,
+      "quality_pass": true,
+      "pdf_pages": 417,
+      "native_layer_check": {
+        "body_pages_checked": 402,
+        "full_page_raster_fraction": 0.0,
+        "median_text_characters": 2174,
+        "image_only_body_pages": 4
+      },
+      "preflight": "output/automation/iterations/20261029-040003/next-preflight.json",
+      "candidate_pages": [
+        357,
+        358
+      ],
+      "selected_source_pdf": "output/benchmark/sources/deisenroth-mathematics-machine-learning.pdf",
+      "selected_source_sha256": "3f87b70c64a35d30ec4e565b4d5cfd18fe913002d3b3bed44691c7d0838911bc",
+      "real_scanned_book": false,
+      "controlled_rasterization": false,
+      "variants": [
+        "native"
+      ],
+      "pages": [
+        357,
+        358
+      ],
+      "printed_pages": [
+        351,
+        352
+      ],
+      "layout_features": [
+        "main_column_with_margin_glossaries",
+        "gray_example_panel",
+        "dense_gaussian_mixture_formulas",
+        "blue_and_orange_formula_parts",
+        "open_diamond_end_mark",
+        "cross_page_example_continuation"
+      ],
+      "source_images": [
+        "output/automation/iterations/20261029-040003/deisenroth-mathematics-machine-learning-selected-p357.png",
+        "output/automation/iterations/20261029-040003/deisenroth-mathematics-machine-learning-selected-p358.png"
+      ],
+      "source_image_review": "Selected original pages visually checked;native text,not a real scan or continuous two-column body.",
+      "selected_scope": "Only physicalPDF357–358/printed351–352;two output pages. Native English source,not a true scan or full-book result.",
+      "canonical_budget_sha256": "3f87b70c64a35d30ec4e565b4d5cfd18fe913002d3b3bed44691c7d0838911bc",
+      "output": "output/benchmark/runs/next-v258-native-color-contracts/results.json",
+      "review": "output/automation/iterations/20261029-130001/mml-validation.json",
+      "full_original_available": false,
+      "original_full_removed": true,
+      "minimal_regression_pdf": "output/benchmark/samples/deisenroth-mathematics-machine-learning-native.pdf",
+      "local_retention": "Full source and duplicate renders removed after declared scope pass. Retain source/SHA,minimal excerpt,required raw stages and current reviewed output. Do not automatically redownload.",
+      "cleanup_receipt": "output/automation/cleanup-20261029-modern-batch.json"
+    },
+    {
+      "id": "kochenderfer-decision-making",
+      "title": "Algorithms for Decision Making",
+      "author": "Mykel J. Kochenderfer; Tim A. Wheeler; Kyle H. Wray",
+      "language": "en",
+      "topic": "ai_decision_making",
+      "publication_year": 2022,
+      "url": "https://algorithmsbook.com/files/dm.pdf",
+      "source_page": "https://algorithmsbook.com/decisionmaking/",
+      "rights": "Author-hosted MIT Press open access,CC BY-NC-ND per PDF;local evaluation only,no redistribution of altered book.",
+      "source_type": "born_digital",
+      "status": "scoped_artifact_and_quality_pass",
+      "local_path": "output/benchmark/sources/kochenderfer-decision-making.pdf",
+      "bytes": 12110527,
+      "sha256": "d63d4132230e7b4c6a2420c7bfd4f9ff6dc5713a3db0d94ff707d09f9f4519ad",
+      "resolved_url": "https://drive.usercontent.google.com/download?id=1drcYW3iJz4wnnCqjuVwQyc5a6eC7i6cu&export=download",
+      "artifact_success": true,
+      "quality_pass": true,
+      "download_url": "https://drive.google.com/uc?export=download&id=1drcYW3iJz4wnnCqjuVwQyc5a6eC7i6cu",
+      "acquisition_note": "Author PDF link redirects to public Google Drive. Direct public download succeeded;no account used.",
+      "pdf_pages": 700,
+      "native_layer_check": {
+        "body_pages_checked": 685,
+        "full_page_raster_fraction": 0.0,
+        "median_text_characters": 1840,
+        "image_only_body_pages": 27
+      },
+      "preflight": "output/automation/iterations/20261029-040003/next-preflight.json",
+      "candidate_pages": [
+        161,
+        162
+      ],
+      "selected_source_pdf": "output/benchmark/sources/kochenderfer-decision-making.pdf",
+      "selected_source_sha256": "d63d4132230e7b4c6a2420c7bfd4f9ff6dc5713a3db0d94ff707d09f9f4519ad",
+      "real_scanned_book": false,
+      "controlled_rasterization": false,
+      "variants": [
+        "native"
+      ],
+      "pages": [
+        161,
+        162
+      ],
+      "printed_pages": [
+        139,
+        140
+      ],
+      "layout_features": [
+        "main_column_with_lateral_algorithm_captions",
+        "syntax_colored_Julia_code",
+        "gray_code_panels_with_rules",
+        "numbered_MDP_value_and_policy_formulas",
+        "cross_page_explanatory_flow"
+      ],
+      "source_images": [
+        "output/automation/iterations/20261029-040003/kochenderfer-decision-making-selected-p161.png",
+        "output/automation/iterations/20261029-040003/kochenderfer-decision-making-selected-p162.png"
+      ],
+      "source_image_review": "Selected original pages visually checked;native text,not a real scan or continuous two-column body.",
+      "selected_scope": "Only physicalPDF161–162/printed139–140;two output pages. Native English source,not a true scan or full-book result.",
+      "canonical_budget_sha256": "d63d4132230e7b4c6a2420c7bfd4f9ff6dc5713a3db0d94ff707d09f9f4519ad",
+      "output": "output/benchmark/runs/next-v262-native-code-captions/results.json",
+      "review": "output/automation/iterations/20261029-130001/decision-validation.json",
+      "full_original_available": false,
+      "original_full_removed": true,
+      "minimal_regression_pdf": "output/benchmark/samples/kochenderfer-decision-making-native.pdf",
+      "local_retention": "Full source and duplicate renders removed after declared scope pass. Retain source/SHA,minimal excerpt,required raw stages and current reviewed output. Do not automatically redownload.",
+      "cleanup_receipt": "output/automation/cleanup-20261029-modern-batch.json"
     }
   ],
-  "scope": "Downloads and PDF preflight only; no extraction, conversion or quality pass claimed. Current PDC issues remain active.",
-  "acquisition_failures": [
-    {
-      "id": "shalev-understanding-machine-learning",
-      "reason": "Author host returned HTML rather than PDF; not counted as acquired."
-    },
-    {
-      "id": "hastie-elements-statistical-learning",
-      "reason": "Author host connection timed out; not counted as acquired."
-    },
-    {
-      "id": "sutton-barto-reinforcement-learning",
-      "reason": "Author host TLS certificate could not be verified; not counted as acquired."
-    }
+  "scope": "Six modern independent works,all declared two-page source excerpts artifact/quality passed. Minimal real-scan Strang and native excerpts retained;no full-book/continuous-double-column claim.",
+  "priority_order": [
+    "strang-calculus",
+    "grinstead-snell-probability",
+    "hammack-book-of-proof",
+    "liu-hu-li-wen-optimization",
+    "deisenroth-mathematics-machine-learning",
+    "kochenderfer-decision-making"
   ],
   "coverage_gaps": [
-    "No newly acquired real scan in this queued set; current PDC true scan remains active.",
-    "Continuous double-column body still unverified."
+    "Continuous double-column body remains unverified;algorithm/code plus side caption is not continuous double-column prose.",
+    "No new Chinese scan in this batch;previous scoped Fudan true-scan regression remains separate."
   ],
-  "priority_order": [
-    "prince-understanding-deep-learning",
-    "boyd-convex-optimization",
-    "lehman-mathematics-for-computer-science",
-    "qiu-neural-networks-deep-learning",
-    "mackay-information-theory",
-    "james-introduction-statistical-learning"
-  ]
+  "acquisition_failures": [
+    {
+      "id": "strang-legacy-full",
+      "url": "https://ocw.mit.edu/ans7870/resources/Strang/Edited/Calculus/Calculus.pdf",
+      "reason": "Redirect loop/404;not downloaded. Using full chapter package from university mirror,without full scanned-book claim."
+    },
+    {
+      "id": "kochenderfer-direct-author-pdf",
+      "url": "https://algorithmsbook.com/files/dm.pdf",
+      "reason": "Redirect to public Drive view HTML;resolved via author-linked public Drive download."
+    }
+  ],
+  "acquired_pdf_sources": 7
 }

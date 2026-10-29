@@ -13,6 +13,58 @@ from book_pipeline.ingestion.formula_bands import (
 
 
 class OCRFormulaBandTests(unittest.TestCase):
+    def test_numbered_multiline_continuation_cannot_be_split_off(self):
+        text=r'\begin{array}{c}x=y+z\\+w,\quad n\geq0\end{array}\tag{7.3}'
+        atom=dict(id='eq',group='eq',page=0,kind='display_math',role='equation',block_type='equation',
+            bbox=[.2,.2,.8,.26],content=text,length=len(text),extraction_method='ocr')
+        band=detect_bands(SourceIndex(dict(atoms=[atom])))[0]
+        self.assertEqual(band['multiline_equation_numbers'],['7.3'])
+        bad=dict(items=[dict(kind='formula',latex='x=y+z',number='7.3'),
+                        dict(kind='formula',latex=r'+w,\quad n\geq0',number='')])
+        with self.assertRaisesRegex(ValueError,'continuation'):validate_answer(bad,band)
+        validate_answer(dict(items=[dict(kind='formula',
+            latex=r'\begin{aligned}x&=y+z\\&\quad+w,\quad n\geq0\end{aligned}',number='7.3')]),band)
+        validate_answer(bad,{**band,'multiline_equation_numbers':[]})
+
+    def test_reread_paragraph_owner_is_complete_unique_and_allows_inline_resegmentation(self):
+        from book_pipeline.ingestion.formula_bands import unique_prose_owner
+        prose='Consider the numerical approximation with stepsize '
+        tail=' and compare its convergence with the reference solution at t.'
+        group=dict(group='g',type='text',bbox=[.1,.3,.8,.4],atoms=[
+            dict(kind='text',content=prose),dict(kind='math',content='h=.1'),dict(kind='text',content=tail)])
+        parts=[('text',prose),('math','h=0.1'),('text',tail[:-2]),('math','t'),('text','.')]
+        self.assertIs(unique_prose_owner(parts,[group]),group)
+        self.assertIsNone(unique_prose_owner(parts,[group,{**group,'group':'duplicate'}]))
+        self.assertIsNone(unique_prose_owner(parts[:-3],[group]))
+        self.assertIsNone(unique_prose_owner([('text','A short label')],[group]))
+
+    def test_native_annotation_scope_and_live_colors_require_independent_review(self):
+        with tempfile.TemporaryDirectory() as name,pymupdf.open() as pdf:
+            path=Path(name)/'source.pdf';page=pdf.new_page(width=400,height=400)
+            page.insert_text((100,100),'x + y',color=(1,.3,0))
+            box=page.get_text('dict')['blocks'][0]['bbox'];pdf.save(path)
+            atom=dict(id='c',group='c',page=0,kind='display_math',block_type='equation',
+                      content='x+y',length=3,bbox=[v/400 for v in box],extraction_method='native')
+            source=SourceIndex(dict(source_pdf=str(path),atoms=[atom]))
+            bands=detect_bands(source)
+            self.assertEqual(bands[0]['native_features'],{'c':['colored_math']})
+            validate_answer(dict(items=[dict(kind='formula',latex=r'\textcolor[rgb]{1,0.3,0}{x+y}',number='')]),bands[0])
+        atom.update(content=r'\underbrace{x+y}_{L}',bbox=[.2,.2,.8,.3])
+        bands=detect_bands(SourceIndex(dict(atoms=[atom])))
+        self.assertEqual(bands[0]['native_features'],{'c':['brace_scope']})
+
+    def test_tiny_native_descender_overlap_does_not_erase_following_side_note_geometry(self):
+        atoms=[dict(id='f',group='f',kind='display_math',block_type='equation',page=0,
+                    bbox=[.3,.2,.8,.2305],content='x=y',length=3,extraction_method='native'),
+               dict(id='p',group='p',kind='text',block_type='text',page=0,
+                    bbox=[.2,.23,.8,.30],content='following prose',length=15,extraction_method='native'),
+               dict(id='n',group='n',kind='text',block_type='text',page=0,
+                    bbox=[.05,.235,.15,.27],content='margin note',length=11,extraction_method='native')]
+        self.assertEqual(detect_bands(SourceIndex(dict(atoms=atoms))),[])
+        # The same uncertain geometry from OCR still requires visual reading.
+        for a in atoms:a['extraction_method']='ocr'
+        self.assertEqual(len(detect_bands(SourceIndex(dict(atoms=atoms)))),1)
+
     def test_plain_scan_prose_uses_two_blind_readings_and_caches_the_consensus_policy(self):
         from copy import deepcopy
         from book_pipeline.config import read

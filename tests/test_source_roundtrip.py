@@ -75,7 +75,9 @@ class SourceRoundtripTests(unittest.TestCase):
                 dict(index=2,type='table',bbox=[.1,.8,.8,.9],content=[dict(type='table_caption',content=[
                     dict(type='text',content='Values of '),math('n')])]),
                 dict(index=3,type='text',bbox=[.1,.1,.9,.9],writing_direction='vertical_rl',
-                     source_prose_end_bbox=[.1,.1,.2,.3],content=[dict(type='text',content='Continued source prompt')])])]))
+                     source_prose_end_bbox=[.1,.1,.2,.3],content=[dict(type='text',content='Continued source prompt')]),
+                dict(index=4,type='equation',bbox=[.2,.2,.7,.25],content='x+y=1',image_path='figure.png'),
+                dict(index=5,type='chart',bbox=[.2,.3,.7,.5],content=[dict(type='chart_body',content='',image_path='figure.png')])])]))
             save(origin/'manifest.json',dict(input_pdf=str(pdf),input_sha256=digest(pdf),mineru_version='test'))
             raw=SourceIndex(load_source(pdf,origin))
             raw_hash=digest(origin/'middle_json.json')

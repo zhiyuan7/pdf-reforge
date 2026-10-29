@@ -14,6 +14,14 @@ class MathUnicodeTests(unittest.TestCase):
     def test_proof_connectives_have_glyphs_in_prose_and_math(self):
         self.assertEqual(escape('∴'),r'\ensuremath{\therefore}')
         self.assertEqual(math_tex('∵'),r'\because')
+
+    def test_double_arrows_and_similarity_keep_math_glyphs_in_table_cells(self):
+        from book_pipeline.publishing.latex import table_tex
+        for symbol,command in [('⇒',r'\Rightarrow'),('⇐',r'\Leftarrow'),
+                               ('⇔',r'\Leftrightarrow'),('∼',r'\sim')]:
+            self.assertEqual(math_tex(symbol+'Q'),command+' Q')
+            self.assertIn(r'\ensuremath{'+command+'}',table_tex(
+                '<table><tr><td>P'+symbol+'Q</td></tr></table>'))
     def test_italic_variables_in_prose_use_math_fonts(self):
         result = escape('当 𝑛 为正整数时，变量 𝑥 可以相加。')
         self.assertIn(r'\ensuremath{n}', result)

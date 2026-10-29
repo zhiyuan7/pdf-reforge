@@ -1,0 +1,321 @@
+{
+  "version": 1,
+  "batch": "next-modern-math-ai-20261028",
+  "status": "complete_scoped",
+  "distinct_works": 6,
+  "books": [
+    {
+      "id": "prince-understanding-deep-learning",
+      "work_id": "prince-understanding-deep-learning",
+      "title": "Understanding Deep Learning",
+      "author": "Simon J. D. Prince",
+      "language": "en",
+      "topic": "deep_learning",
+      "url": "https://github.com/udlbook/udlbook/releases/download/v5.0.3/UnderstandingDeepLearning_02_09_26_C.pdf",
+      "source_page": "https://udlbook.github.io/udlbook/",
+      "release": "v5.0.3",
+      "release_published_at": "2026-02-09T20:00:36Z",
+      "rights": "CC BY-NC-ND 4.0, as specified by the official repository; local noncommercial evaluation and adapted outputs only, no redistribution of adapted material.",
+      "local_path": "output/benchmark/sources/prince-understanding-deep-learning.pdf",
+      "bytes": 22344992,
+      "sha256": "f8237d393163900fa8e43210e680a3f987b45ccac7750b372e156fae3df0bf32",
+      "status": "scoped_artifact_and_quality_pass",
+      "priority": "user_requested_next_batch_first",
+      "artifact_success": true,
+      "quality_pass": true,
+      "variants": [
+        "native"
+      ],
+      "pdf_pages": 541,
+      "source_type": "born_digital",
+      "preflight": "output/benchmark/next-batch/udl-preflight.json",
+      "layout_features": [
+        "single_main_column_with_outer_margin_notes",
+        "side_figure_captions",
+        "colored_plots",
+        "dense_numbered_display_math",
+        "linked_problem_notebook_appendix_notes",
+        "bold_and_italic_emphasis",
+        "printer_crop_marks"
+      ],
+      "layout_review_scope": "Physical PDF pages30,80,170,250,350,450 visually inspected; no conversion or quality pass.",
+      "candidate_sample_pages": [
+        80,
+        250,
+        350
+      ],
+      "pages": [
+        80,
+        81
+      ],
+      "selected_scope": "Physical PDF80–81 / printed66–67 only: loss equations, three colored diagrams, figure captions above/below/beside plots, margin references; native text, no scan or continuous-double-column claim.",
+      "output": "output/benchmark/runs/next-v210-reviewed-margin-width/results.json",
+      "review": "output/automation/iterations/20261029-000001/review.md",
+      "review_scope": "Physical PDF80–81 / printed66–67 only; starts mid-section and ends before equation5.21; no chapter or full-book claim",
+      "settled_conservative_cny": 0.410355264,
+      "full_original_available": false,
+      "minimal_regression_pdf": "output/benchmark/samples/prince-understanding-deep-learning-native.pdf",
+      "minimal_regression_sha256": "33bf8ce4c84432233da7b6c32b883943a37670a2624443b33414546233bf44fb",
+      "local_retention": "Full original removed after declared physical80–81 scoped pass on2026-10-29. Keep source/SHA, minimal excerpt and reviewed output; do not automatically redownload.",
+      "current_reviewed_results": "output/benchmark/runs/next-v234-final-native-regression/results.json",
+      "quality_review": "output/automation/iterations/20261029-040003/review.md",
+      "original_full_removed": true
+    },
+    {
+      "id": "boyd-convex-optimization",
+      "title": "Convex Optimization",
+      "author": "Stephen Boyd; Lieven Vandenberghe",
+      "language": "en",
+      "topic": "optimization",
+      "url": "https://web.stanford.edu/~boyd/cvxbook/bv_cvxbook.pdf",
+      "source_page": "https://web.stanford.edu/~boyd/cvxbook/",
+      "rights": "Author-hosted with Cambridge University Press permission; local evaluation only.",
+      "local_path": "output/benchmark/sources/boyd-convex-optimization.pdf",
+      "bytes": 6881335,
+      "sha256": "40d976c83c18cce1900eff8c41bd5ad408c102b813af39d05ff85678ccf8d76e",
+      "status": "scoped_artifact_and_quality_pass",
+      "pdf_pages": 714,
+      "source_type": "born_digital",
+      "preflight": "output/benchmark/next-batch/preflight.json",
+      "layout_features": [
+        "single_column",
+        "dense_display_math",
+        "linked_bibliography"
+      ],
+      "layout_review_scope": "Physical PDF page30 visual check only; representative conversion pages not yet selected.",
+      "artifact_success": true,
+      "quality_pass": true,
+      "variants": [
+        "native"
+      ],
+      "pages": [
+        141,
+        142
+      ],
+      "selected_scope": "Physical PDF141–142 / printed127–128 only: chapter/section/subsection headings, standard optimization constraints, feasible/domain/optimal sets, dense inline and display formulas, cross-page paragraph; native text, no real-scan or double-column claim.",
+      "output": "output/benchmark/runs/next-v213-native-rule-list-boundary/results.json",
+      "review": "output/automation/iterations/20261029-020002/review.md",
+      "issues": [
+        "native_prose_italic_emphasis_not_preserved",
+        "example_source_horizontal_rules_and_inset_not_preserved",
+        "display_and_inline_formula_audit_pending"
+      ],
+      "full_original_available": false,
+      "review_scope": "OriginalPDF141–142/printed127–128 only;26 native font ranges,6 displays and inline math,source ruled inset reviewed; no full-book claim",
+      "settled_conservative_cny": 0.404793408,
+      "minimal_regression_pdf": "output/benchmark/samples/boyd-convex-optimization-native.pdf",
+      "minimal_regression_sha256": "cbaa14773f8a50840277b1341a212e80f9bfb121ed34993c213fd26754b9df66",
+      "local_retention": "Full original and superseded v211/v212 PDF products removed after physical141–142 scoped pass;keep source/SHA,ledger,minimal excerpt,current v213 output and saved v211 recognition;do not automatically redownload.",
+      "current_reviewed_results": "output/benchmark/runs/next-v234-final-native-regression/results.json",
+      "quality_review": "output/automation/iterations/20261029-040003/review.md",
+      "original_full_removed": true
+    },
+    {
+      "id": "lehman-mathematics-for-computer-science",
+      "title": "Mathematics for Computer Science",
+      "author": "Eric Lehman; F. Thomson Leighton; Albert R. Meyer",
+      "language": "en",
+      "topic": "discrete_mathematics",
+      "url": "https://courses.csail.mit.edu/6.042/spring18/mcs.pdf",
+      "source_page": "https://courses.csail.mit.edu/6.042/spring18/",
+      "rights": "Creative Commons Attribution-ShareAlike 3.0; explicitly printed on PDF physical page1 of the author/MIT-hosted 2018 edition.",
+      "local_path": "output/benchmark/sources/lehman-mathematics-for-computer-science.pdf",
+      "bytes": 13269308,
+      "sha256": "ea4ced500d4a4bae7beb7a72ae9784abb96ed656ad905976f54c828cf6337dc1",
+      "status": "scoped_artifact_and_quality_pass",
+      "pdf_pages": 1048,
+      "source_type": "born_digital",
+      "preflight": "output/benchmark/next-batch/preflight.json",
+      "layout_features": [
+        "single_column",
+        "proofs_and_problem_labels",
+        "multiline_aligned_equations",
+        "black_proof_end_marks"
+      ],
+      "layout_review_scope": "Physical151–152 page images reviewed;proof remains English;starts after prior theorem and ends after the complete explanatory paragraph and footnote.",
+      "artifact_success": true,
+      "quality_pass": true,
+      "variants": [
+        "native"
+      ],
+      "pages": [
+        151,
+        152
+      ],
+      "selected_scope": "PhysicalPDF151–152/printed143–144 only: two vector courtyard tiling diagrams,induction proof with base/step labels,inline powers and logical implication,black proof end mark,footnote4,and cross-page proof paragraph;native text,no real-scan or continuous-double-column claim.",
+      "source_images": [
+        "output/automation/iterations/20261029-030001/lehman-selected-p151.png",
+        "output/automation/iterations/20261029-030001/lehman-selected-p152.png"
+      ],
+      "current_reviewed_results": "output/benchmark/runs/next-v234-final-native-regression/results.json",
+      "quality_review": "output/automation/iterations/20261029-040003/review.md",
+      "render_settings": {
+        "float_assets": false
+      },
+      "original_full_removed": true,
+      "minimal_regression_pdf": "output/benchmark/samples/lehman-mathematics-for-computer-science-native.pdf",
+      "licence_evidence": "Original physicalPDF1 explicitly names Creative Commons Attribution-ShareAlike3.0;checked2026-10-29 before original cleanup.",
+      "review_scope": "Only physical151–152/printed143–144:85 immutable edited atoms,11 recovered emphasis runs,two tiling figures,proof end mark,and uniquely matched same-page footnote4 (rendered1);English retained;no full-book claim.",
+      "full_original_available": false
+    },
+    {
+      "id": "qiu-neural-networks-deep-learning",
+      "title": "神经网络与深度学习（第一版）",
+      "author": "邱锡鹏",
+      "language": "zh",
+      "topic": "deep_learning",
+      "url": "https://raw.githubusercontent.com/nndl/nndl/main/legacy/nndl-v1/main.pdf",
+      "source_page": "https://github.com/nndl/nndl",
+      "rights": "Author-maintained repository; local evaluation only; no redistribution licence asserted.",
+      "local_path": "output/benchmark/sources/qiu-neural-networks-deep-learning.pdf",
+      "bytes": 6549956,
+      "sha256": "db5504e8400d2bbe54ba22a1e5e1f67366e04842a1ef24c156ce762971bb4d1a",
+      "status": "scoped_artifact_and_quality_pass",
+      "pdf_pages": 444,
+      "source_type": "born_digital",
+      "preflight": "output/benchmark/next-batch/preflight.json",
+      "layout_features": [
+        "chinese_main_column_with_margin_notes",
+        "colored_emphasis_and_links",
+        "latin_names_in_chinese_prose"
+      ],
+      "layout_review_scope": "Physical104–105 original images reviewed; use technical network/theorem excerpt rather than historical introduction on physical30–31.",
+      "artifact_success": true,
+      "quality_pass": true,
+      "variants": [
+        "native"
+      ],
+      "pages": [
+        104,
+        105
+      ],
+      "selected_scope": "PhysicalPDF104–105/printed89–90 only: Chinese feedforward network diagram,symbol table with vector/matrix notation,7 numbered displays,margin notes and colored rounded theorem panel;native source,no real-scan or continuous-double-column claim.",
+      "current_reviewed_results": "output/benchmark/runs/next-v234-final-native-regression/results.json",
+      "quality_review": "output/automation/iterations/20261029-040003/review.md",
+      "original_full_removed": true,
+      "minimal_regression_pdf": "output/benchmark/samples/qiu-neural-networks-deep-learning-native.pdf",
+      "review_scope": "Physical104–105/printed89–90 only;140 immutable edited atoms,8×2 ruled table,7 numbered displays,network diagram,three side-note pairs and outlined rounded theorem;one source-bound discretionary join;no full-book claim",
+      "full_original_available": false
+    },
+    {
+      "id": "mackay-information-theory",
+      "title": "Information Theory, Inference, and Learning Algorithms",
+      "author": "David J. C. MacKay",
+      "language": "en",
+      "topic": "information_theory",
+      "url": "https://www.inference.org.uk/itprnn/book.pdf",
+      "source_page": "https://www.inference.org.uk/mackay/itila/book.html",
+      "rights": "Copyright Cambridge University Press2003;original page headers explicitly permit on-screen viewing and prohibit printing. Local evaluation only;no redistribution licence asserted.",
+      "local_path": "output/benchmark/sources/mackay-information-theory.pdf",
+      "bytes": 11675219,
+      "sha256": "868adc5f0ef6630366b122d88d691acfbe8339978b4ec3f38fca5e231f135791",
+      "status": "scoped_artifact_and_quality_pass",
+      "pdf_pages": 640,
+      "source_type": "born_digital",
+      "preflight": "output/benchmark/next-batch/preflight.json",
+      "layout_features": [
+        "single_main_column",
+        "numbered_multiline_equations",
+        "large_binary_matrices"
+      ],
+      "layout_review_scope": "Both selected page images reviewed;five dense binary matrices and a main-column-plus-side-graph layout;ends mid code-construction discussion.",
+      "artifact_success": true,
+      "quality_pass": true,
+      "variants": [
+        "native"
+      ],
+      "pages": [
+        30,
+        31
+      ],
+      "selected_scope": "PhysicalPDF30–31/printed18–19 only: Hamming-code symmetry,7 numbered displays1.48–1.54,five binary parity-check matrices(3×7,4×7,7×7),cyclic-code definition,exercise solutions,cross-page paragraph and side parity-check graph/captionFig1.20;native text,no real-scan or continuous-double-column claim.",
+      "source_images": [
+        "output/automation/iterations/20261029-030001/mackay-selected-p30.png",
+        "output/automation/iterations/20261029-030001/mackay-selected-p31.png"
+      ],
+      "licence_evidence": "Original PDFphysical1 and selected30–31 header;checked2026-10-29.",
+      "current_reviewed_results": "output/benchmark/runs/next-v234-final-native-regression/results.json",
+      "quality_review": "output/automation/iterations/20261029-040003/review.md",
+      "review_scope": "PhysicalPDF30–31/printed18–19 only: Hamming-code symmetry,7 numbered displays1.48–1.54,five binary parity-check matrices(3×7,4×7,7×7),cyclic-code definition,exercise solutions,cross-page paragraph and side parity-check graph/captionFig1.20;native text,no real-scan or continuous-double-column claim.",
+      "original_full_removed": true,
+      "full_original_available": false,
+      "minimal_regression_pdf": "output/benchmark/samples/mackay-information-theory-native.pdf"
+    },
+    {
+      "id": "james-introduction-statistical-learning",
+      "title": "An Introduction to Statistical Learning with Applications in R, first edition, seventh printing",
+      "author": "Gareth James; Daniela Witten; Trevor Hastie; Robert Tibshirani",
+      "language": "en",
+      "topic": "statistical_learning",
+      "url": "https://www.statlearning.com/s/ISLR-Seventh-Printing.pdf",
+      "resolved_url": "https://static1.squarespace.com/static/5ff2adbe3fe4fe33db902812/t/6009dd9fa7bc363aa822d2c7/1611259312432/ISLR+Seventh+Printing.pdf",
+      "source_page": "https://www.statlearning.com/",
+      "rights": "Official book website provides free PDF download; local evaluation only; copyright retained.",
+      "local_path": "output/benchmark/sources/james-introduction-statistical-learning.pdf",
+      "bytes": 11237547,
+      "sha256": "dd6997f961a132293e79cdf1b4969be666dcd4a1660fc5716691b46e29e118f9",
+      "status": "scoped_artifact_and_quality_pass",
+      "pdf_pages": 441,
+      "source_type": "born_digital",
+      "preflight": "output/benchmark/next-batch/preflight.json",
+      "layout_features": [
+        "main_column_with_margin_notes",
+        "blue_chapter_and_section_headings",
+        "colored_inline_keywords",
+        "footnotes"
+      ],
+      "layout_review_scope": "PhysicalPDF30–31 original pages reviewed before conversion; selected page images in output/automation/iterations/20261029-020002/islr-selected-p30.png and islr-selected-p31.png",
+      "artifact_success": true,
+      "quality_pass": true,
+      "variants": [
+        "native"
+      ],
+      "pages": [
+        30,
+        31
+      ],
+      "selected_scope": "PhysicalPDF30–31/printed15–16 only: statistics chapter opening,side-margin terminology,mixed colored prose and italic definitions,three colored scatterplots with long caption,regression equation2.1; native text,no real-scan or double-column claim.",
+      "output": "output/benchmark/runs/next-v216-native-glossary-source-ink/results.json",
+      "review": "output/automation/iterations/20261029-020002/review.md",
+      "review_scope": "PhysicalPDF30–31/printed15–16 only;97 immutable atoms,2 margin glossaries,three plots and whole italic caption,eq2.1;2 reviewed render-only discretionary hyphen edits;no full-book claim",
+      "settled_conservative_cny": 0.323431008,
+      "full_original_available": false,
+      "minimal_regression_pdf": "output/benchmark/samples/james-introduction-statistical-learning-native.pdf",
+      "minimal_regression_sha256": "b90e53220b66997823aec8d619d06df408598727bf37708c2e06f33477a61520",
+      "local_retention": "Full original and superseded PDF products removed after physical30–31 scoped pass;keep sources/SHA,ledger,minimal excerpt,current v216 and saved v214 recognition;do not automatically redownload.",
+      "current_reviewed_results": "output/benchmark/runs/next-v234-final-native-regression/results.json",
+      "quality_review": "output/automation/iterations/20261029-040003/review.md",
+      "original_full_removed": true
+    }
+  ],
+  "scope": "Six independent modern works: declared two-source-page excerpts only, all reviewed;no full-book or new scan/double-column pass claimed.",
+  "acquisition_failures": [
+    {
+      "id": "shalev-understanding-machine-learning",
+      "reason": "Author host returned HTML rather than PDF; not counted as acquired."
+    },
+    {
+      "id": "hastie-elements-statistical-learning",
+      "reason": "Author host connection timed out; not counted as acquired."
+    },
+    {
+      "id": "sutton-barto-reinforcement-learning",
+      "reason": "Author host TLS certificate could not be verified; not counted as acquired."
+    }
+  ],
+  "coverage_gaps": [
+    "This completed batch is native text;true-scan regression remains separately recorded.",
+    "Continuous double-column body still awaits a representative modern textbook."
+  ],
+  "priority_order": [
+    "prince-understanding-deep-learning",
+    "boyd-convex-optimization",
+    "lehman-mathematics-for-computer-science",
+    "qiu-neural-networks-deep-learning",
+    "mackay-information-theory",
+    "james-introduction-statistical-learning"
+  ],
+  "completed_at": "2026-10-29T04:30:54.428321+08:00",
+  "quality_passes": 6,
+  "artifact_successes": 6
+}

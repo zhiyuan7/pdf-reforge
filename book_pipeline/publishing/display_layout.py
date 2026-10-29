@@ -30,6 +30,128 @@ def same_column(left, right):
     return width > 0 and min(a[2], b[2])-max(a[0], b[0]) >= .6*width
 
 
+def fraction_prose_rows(index, barriers=(), skipped=()):
+    """Keep short, tall source rows of prose and fractions at display size.
+
+    OCR can label a complete mathematical line as a paragraph because it
+    contains a few connecting words. Require a bounded, math-heavy source
+    group; ordinary narrative, captions and semantic edges retain prose flow.
+    """
+    rows = []
+    for group, positions in index.groups.items():
+        first,last = min(positions),max(positions)
+        atoms = [index.atoms[n] for n in positions]
+        if (positions != list(range(first,last+1))
+                or any(a['kind'] not in {'text','math'} or is_display(a)
+                       or a.get('role') not in {'text','paragraph','equation_inline'}
+                       or a.get('block_type') not in {'text','paragraph'}
+                       or a.get('source_panel') for a in atoms)
+                or len({a['page'] for a in atoms}) != 1):
+            continue
+        prose = ''.join(a['content'] for a in atoms if a['kind']=='text')
+        math = ''.join(a['content'] for a in atoms if a['kind']=='math')
+        boxes = [a.get('block_bbox') or a.get('bbox') for a in atoms]
+        box = boxes[0]
+        lo,hi = index.prefix[first],index.prefix[last+1]
+        if (not 2 <= len(re.findall(r'\\(?:d?frac)\b',math)) <= 6
+                or len(re.sub(r'\s','',prose)) > 55 or len(prose.split()) > 12
+                or len(prose)+len(math) > 600
+                or re.search(r'\\(?:begin|end|tag)\b|\\\\',math)
+                or not box or any(b != box for b in boxes)
+                or not 0 <= box[0] < box[2] <= 1 or not 0 <= box[1] < box[3] <= 1
+                or not .025 <= box[3]-box[1] <= .06 or not .3 <= box[2]-box[0] <= .9
+                or any(lo < b < hi for b in barriers)
+                or any(a < hi and z > lo for a,z,*_ in skipped)):
+            continue
+        rows.append(dict(method='bounded_source_fraction_prose_row',group=group,
+                         lo=lo,hi=hi,page=atoms[0]['page']))
+    return rows
+
+
+def fraction_prose_units(index, rows, barriers=(), skipped=()):
+    """Keep a bounded fraction chain with its immediately closing paragraphs."""
+    starts={r['lo']:r for r in rows}
+    units=[]
+    for row in rows:
+        if units and row['lo'] < units[-1]['hi']:
+            continue
+        following=starts.get(row['hi'])
+        if not following or following['page'] != row['page']:
+            continue
+        lo,hi=row['lo'],following['hi']
+        first=index.atoms[index.ids[index.address(lo)['atom']]]
+        source_box=first.get('block_bbox') or first.get('bbox')
+        second=index.atoms[index.ids[index.address(row['hi'])['atom']]]
+        second_box=second.get('block_bbox') or second.get('bbox')
+        if (not same_column(first,second)
+                or not -.003 <= second_box[1]-source_box[3] <= .03):
+            continue
+        for _ in range(2):
+            if hi == index.prefix[-1]:break
+            n=index.ids[index.address(hi)['atom']]
+            group=index.atoms[n]['group'];positions=index.groups[group]
+            if positions != list(range(n,max(positions)+1)):break
+            atoms=[index.atoms[p] for p in positions]
+            end=index.prefix[max(positions)+1]
+            text=index.text(hi,end)
+            boxes=[a.get('block_bbox') or a.get('bbox') for a in atoms]
+            if (any(a['page'] != first['page'] or a['kind'] not in {'text','math'}
+                    or a.get('role') not in {'text','paragraph','equation_inline'}
+                    or a.get('block_type') not in {'text','paragraph'} or a.get('source_panel')
+                    for a in atoms) or not 80 <= len(text) <= 600
+                    or len(index.text(lo,end)) > 1400 or not all(boxes)
+                    or min(b[1] for b in boxes) < source_box[1]
+                    or max(b[3] for b in boxes)-source_box[1] > .25
+                    or not all(same_column(first,a) for a in atoms)
+                    or any(lo < b < end for b in barriers)
+                    or any(a < end and z > lo for a,z,*_ in skipped)):
+                break
+            hi=end
+        if hi > following['hi']:
+            units.append(dict(method='bounded_fraction_chain_closing_prose',lo=lo,hi=hi,
+                              page=first['page']))
+    return units
+
+
+def colon_introductions(index, barriers=(), skipped=()):
+    """Reserve following lines for short, complete source introductions.
+
+    A colon is a typographic adjacency cue, not a semantic classification.
+    Keep ordinary prose, formulas and source anchors unchanged; do not span
+    pages, columns, captions, panels, edits or semantic boundaries.
+    """
+    result=[]
+    for group, positions in index.groups.items():
+        first,last=min(positions),max(positions)
+        atoms=[index.atoms[n] for n in positions]
+        if (positions!=list(range(first,last+1)) or last+1==len(index.atoms)
+                or any(a['kind'] not in {'text','math'}
+                       or a.get('role') not in {'text','paragraph','equation_inline'}
+                       or a.get('block_type') not in {'text','paragraph'}
+                       or a.get('source_panel') for a in atoms)):
+            continue
+        lo,hi=index.prefix[first],index.prefix[last+1]
+        text=index.text(lo,hi).strip()
+        following=index.atoms[last+1]
+        box=atoms[-1].get('bbox')
+        next_box=following.get('bbox')
+        if (not 4<=len(text)<=120 or not text.endswith((':','：'))
+                or atoms[-1]['kind']!='text'
+                or following['page']!=atoms[0]['page']
+                or any(a['page']!=atoms[0]['page'] for a in atoms)
+                or following.get('source_panel')
+                or following.get('role') not in {'text','paragraph','equation_inline','equation'}
+                or following['kind'] not in {'text','math','display_math'}
+                or not same_column(atoms[-1],following) or not box or not next_box
+                or not -.01<=next_box[1]-box[3]<=.08
+                or any(lo<p<=hi for p in barriers)
+                or any(a<index.prefix[last+2] and z>lo for a,z,*_ in skipped)):
+            continue
+        result.append(dict(method='short_colon_introduction', group=group,
+                           lo=lo,hi=hi,baselines=4))
+    return result
+
+
 def formula_image_prompts(index, barriers=(), skipped=()):
     """Keep a short source prompt with an adjacent uncertain formula crop.
 

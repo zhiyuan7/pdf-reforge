@@ -211,6 +211,17 @@ class AutoIngestionTests(unittest.TestCase):
         translator=Translator(Client(dict(items=[dict(id='a',text=answer)],terms={})))
         self.assertEqual(translator.translate([dict(id='a',text=raw)])['a'],raw.replace('Loss','损失'))
 
+    def test_number_inventory_survives_adjacent_chinese_without_releasing_identifiers(self):
+        from collections import Counter
+        source='In Figure 6.2 we use $p$ for 12 trials.'
+        translator=Translator(Client(dict(items=[dict(id='a',text='在图⟪KEEP_0⟫中，我们用⟪KEEP_1⟫进行⟪KEEP_2⟫次试验。')],terms={})))
+        output=translator.translate([dict(id='a',text=source)])['a']
+        self.assertEqual(Counter(protect(output)[1]),Counter(protect(source)[1]))
+        self.assertEqual(protect('图6.2中有12次试验')[1],['6.2','12'])
+        self.assertEqual(protect('x2 2t item_12 H2O')[1],[])
+        for damaged in (output.replace('12','13'),output+'另有12次',output.replace('6.2','')):
+            self.assertNotEqual(Counter(protect(damaged)[1]),Counter(protect(source)[1]))
+
     def test_same_named_headings_keep_their_numbers_in_catalogue_lookup(self):
         source=dict(translation=dict(titles=[dict(original='1.1 Supervised learning',translated='1.1 监督学习'),
                                             dict(original='Chapter 2 Supervised learning',translated='第2章 监督学习')],glossary={}))
@@ -264,6 +275,42 @@ class AutoIngestionTests(unittest.TestCase):
         self.assertEqual(pages[0]['blocks'][0]['type'],'paragraph_title')
         self.assertEqual(pages[1]['blocks'][0]['type'],'header')
 
+    def test_alternating_running_titles_need_peer_band_folio_and_separate_body(self):
+        from copy import deepcopy
+        pages=[dict(page_idx=0,blocks=[dict(type='header',bbox=[.5,.1,.9,.113],content='Chapter title')]),
+               dict(page_idx=1,blocks=[dict(type='paragraph_title',bbox=[.1,.1,.4,.113],content='3.2 A different section'),
+                   dict(type='page_number',bbox=[.9,.1,.92,.113],content='18'),
+                   dict(type='text',bbox=[.1,.135,.75,.2],content='A paragraph continuing from the previous page.')])]
+        for defect in ('none','no_peer','no_folio','different_band','body_too_close','folio_inside'):
+            p=deepcopy(pages)
+            if defect=='no_peer':p[0]['blocks']=[]
+            if defect=='no_folio':p[1]['blocks'][1]['type']='text'
+            if defect=='different_band':p[0]['blocks'][0]['bbox']=[.5,.06,.9,.073]
+            if defect=='body_too_close':p[1]['blocks'][2]['bbox'][1]=.12
+            if defect=='folio_inside':p[1]['blocks'][1]['bbox']=[.2,.1,.22,.113]
+            normalize_marginals(p)
+            self.assertEqual(p[1]['blocks'][0]['type'],'header' if defect=='none' else 'paragraph_title',defect)
+
+
+    def test_high_alternating_scan_header_requires_peer_folio_and_body_gap(self):
+        pages=[dict(page_idx=0,blocks=[
+            dict(type='header',bbox=[.39,.049,.63,.065],content='A running section'),
+            dict(type='page_number',bbox=[.88,.043,.91,.061],content='57')]),
+            dict(page_idx=1,blocks=[
+                dict(type='paragraph_title',bbox=[.43,.052,.54,.068],content='5 A running chapter'),
+                dict(type='page_number',bbox=[.085,.048,.114,.066],content='58'),
+                dict(type='text',bbox=[.19,.084,.62,.102],content='An example continues here.')])]
+        for defect in ('none','no_peer','no_folio','wrong_band','body_too_close','tall_heading'):
+            with self.subTest(defect=defect):
+                p=deepcopy(pages)
+                if defect=='no_peer':p[0]['blocks']=[]
+                if defect=='no_folio':p[1]['blocks'][1]['type']='text'
+                if defect=='wrong_band':p[0]['blocks'][0]['bbox']=[.39,.1,.63,.116]
+                if defect=='body_too_close':p[1]['blocks'][2]['bbox'][1]=.07
+                if defect=='tall_heading':p[1]['blocks'][0]['bbox'][3]=.09
+                normalize_marginals(p)
+                self.assertEqual(p[1]['blocks'][0]['type'],
+                    'header' if defect=='none' else 'paragraph_title')
 
     def test_invalid_translation_batch_splits_without_bypassing_validation(self):
         class SplitClient(Client):

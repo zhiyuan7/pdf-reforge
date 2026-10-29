@@ -231,7 +231,7 @@ def merge_footnote_continuations(original, notes):
 
 def saved_heading_policy(metadata, config):
     settings={**metadata['heading_layout'],'standalone_levels':[1],'page_break_after_levels':[2]}
-    native_config={**config,'float_assets':True,'start_page_levels':[2]}
+    native_config={**config,'float_assets':config.get('float_assets',True),'start_page_levels':[2]}
     if config.get('publication_scope') == 'excerpt':
         # A mid-chapter sample needs continuous section flow. Retain chapter
         # title pages and explicit anchor breaks, but avoid flushing a mostly
@@ -329,6 +329,12 @@ def render_saved_book(original,processing,mapping_directory,metadata,config,outp
     from book_pipeline.publishing.native_note_styles import recover_native_note_styles
     native_styles, native_style_report = recover_native_note_styles(edited.index, original,
         {c['atom'] for c in decisions['corrections']})
+    from book_pipeline.publishing.native_body_styles import recover_native_body_styles
+    native_body, native_body_report = recover_native_body_styles(edited.index, original,
+        corrections=decisions['corrections'])
+    decisions['native_math_text'] = native_body_report.get('math_text', {})
+    decisions['native_math_styles'] = native_body_report.get('math_styles', {})
+    decisions['native_paragraph_starts'] = native_body_report.get('paragraph_starts', {})
     from book_pipeline.publishing.raster_cjk_styles import recover_cjk_note_styles
     cjk_styles, cjk_report = recover_cjk_note_styles(edited.index, original,
         reports/'raster_styles', {c['atom'] for c in decisions['corrections']})
@@ -338,6 +344,9 @@ def render_saved_book(original,processing,mapping_directory,metadata,config,outp
             raise ValueError('Independently observed scan styles overlap: '+atom)
         styles[atom] = combined
     from book_pipeline.publishing.raster_styles import merge_style_evidence
+    for atom, runs in native_body.items():
+        styles[atom] = merge_style_evidence(edited.index.atoms[edited.index.ids[atom]]['content'],
+                                          styles.get(atom, []), runs)
     for atom, runs in cjk_styles.items():
         styles[atom] = merge_style_evidence(edited.index.atoms[edited.index.ids[atom]]['content'],
                                           styles.get(atom, []), runs)
@@ -366,8 +375,10 @@ def render_saved_book(original,processing,mapping_directory,metadata,config,outp
             style_report['status'] = 'requires_visual_review'
     style_report['body_cpu'] = body_report
     style_report['native_note_cpu'] = native_style_report
+    style_report['native_body_cpu'] = native_body_report
     style_report['cjk_note_cpu'] = cjk_report
-    if body_styles or native_styles or cjk_styles:
+    if body_styles or native_styles or native_body or cjk_styles or any(
+            native_body_report.get(k) for k in ('math_text','math_styles','paragraph_starts')):
         style_report['status'] = 'requires_visual_review'
     decisions['source_styles'] = styles
     save(reports/'raster_styles.json', style_report)
@@ -399,6 +410,8 @@ def render_saved_book(original,processing,mapping_directory,metadata,config,outp
         edited.index,native_config,project,reports,tools,generate,progress)
     save(reports/'compilation.json',compilation)
     save(reports/'formula_repairs.json',formula_repairs)
+    relocated_notes={identifier for row in coverage['source_order_layout']
+                     for identifier in row.get('relocated_footnotes',[])}
     result=dict(method=METHOD,processing_method=report['method'],status='compiled' if compilation['success'] else 'compilation_failed',
         output=str(output),tex=str(project/'main.tex'),pdf=str(project/'main.pdf') if compilation['success'] else None,
         source=book['source'],usage=formula_repairs['usage'],
@@ -415,8 +428,10 @@ def render_saved_book(original,processing,mapping_directory,metadata,config,outp
             ignored_legacy_formula_modules=sum(not m['method'].startswith('page_content_keywords_v') for m in edited.ignored_formula_modules),
             native_formula_special_blocks=sum(m['method'].startswith('page_content_keywords_v') for m in edited.ignored_formula_modules),
             examples=sum(t['kind']=='example' for t in edited.registry),linked_reference_hints=len(edited.linked_hints),
-            footnotes=len(edited.footnotes), matched_footnotes=sum(n['status']=='matched' for n in edited.footnotes),
-            unmatched_footnotes=sum(n['status']=='unmatched' for n in edited.footnotes),
+            footnotes=sum(n['id'] not in relocated_notes for n in edited.footnotes),
+            native_side_notes_from_footnotes=len(relocated_notes),
+            matched_footnotes=sum(n['status']=='matched' and n['id'] not in relocated_notes for n in edited.footnotes),
+            unmatched_footnotes=sum(n['status']=='unmatched' and n['id'] not in relocated_notes for n in edited.footnotes),
             duplicate_footnote_formula_blocks=len(book.get('footnote_duplicate_formulas', [])),
             ambiguous_or_unmatched_hints=len(edited.unlinked),asset_float_groups=sum(r['method']=='deferred_asset_float' for r in coverage['source_order_layout']),
             horizontal_image_rows=sum(r['method']=='horizontal_source_image_row' for r in coverage['source_order_layout']),
@@ -428,8 +443,11 @@ def render_saved_book(original,processing,mapping_directory,metadata,config,outp
         audit=audit_pdf(project/'main.pdf',coverage,edited.registry)
         save(reports/'pdf_audit.json',audit)
         numbering = {n['id']:n for n in audit['footnotes']}
-        save(reports/'footnotes.json', [{**note, **{k:v for k,v in numbering[note['id']].items()
+        save(reports/'footnotes.json', [({**note,'status':'native_side_note',
+             'reason':'live_small_font_outside_main_column','rendered_as':'side_note'}
+             if note['id'] in relocated_notes else {**note, **{k:v for k,v in numbering[note['id']].items()
              if k in {'rendered_page','reference_page','rendered_number','rendered_marker','same_page'}}}
+             )
              for note in edited.footnotes])
         save(reports/'footnote_numbering.json', dict(method='matched_footnotes_per_rendered_physical_page_v1',
              pages=audit['footnote_numbering_pages'], items=audit['footnotes']))

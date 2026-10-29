@@ -6,7 +6,50 @@ visual evidence; no synthetic panel is inferred from a declaration's wording.
 from collections import Counter, defaultdict
 
 
-METHOD = 'vector_text_panels_v3'
+METHOD = 'rectilinear_text_panels_v5'
+
+
+def flat_panel_path(path):
+    """Require four straight sides, allowing curved corners but not ellipses."""
+    box = path['rect']
+    if box.width <= 0 or box.height <= 0 or not 1 <= len(path['items']) <= 12:
+        return False
+    edges = []
+    for item in path['items']:
+        if item[0] == 're':
+            r = item[1]
+            edges += [(r.tl, r.tr), (r.tr, r.br), (r.br, r.bl), (r.bl, r.tl)]
+        elif item[0] == 'l':
+            edges.append(item[1:3])
+        elif item[0] == 'qu':
+            q = item[1]
+            edges += [(q.ul, q.ur), (q.ur, q.lr), (q.lr, q.ll), (q.ll, q.ul)]
+        elif item[0] != 'c':
+            return False
+    tolerance = max(.1, min(box.width, box.height)*.002)
+    sides = set()
+    for a, b in edges:
+        if abs(a.y-b.y) <= tolerance and abs(a.x-b.x) >= box.width*.5:
+            for name, y in (('top', box.y0), ('bottom', box.y1)):
+                if abs(a.y-y) <= tolerance and abs(b.y-y) <= tolerance:
+                    sides.add(name)
+        elif abs(a.x-b.x) <= tolerance and abs(a.y-b.y) >= box.height*.5:
+            for name, x in (('left', box.x0), ('right', box.x1)):
+                if abs(a.x-x) <= tolerance and abs(b.x-x) <= tolerance:
+                    sides.add(name)
+    return len(sides) == 4
+
+
+def panel_outline(path, drawings):
+    """Find a visible matching stroke, including a separately painted outline."""
+    for stroke in reversed(drawings):
+        if (stroke.get('color') is not None and (stroke.get('width') or 0) > 0
+                and stroke.get('stroke_opacity', 1) > 0 and flat_panel_path(stroke)
+                and stroke.get('seqno', 0) >= path.get('seqno', 0)
+                and max(abs(a-b) for a,b in zip(stroke['rect'],path['rect']))
+                    <= max(.5, (stroke.get('width') or 0)/2)):
+            return stroke
+    return None
 
 
 def visible_fill(drawings, box, title=None):
@@ -38,12 +81,11 @@ def title_ink(page, box):
 def text_panels(page):
     """Recover flat rectangular/rounded backgrounds containing live prose."""
     area = page.rect.get_area()
-    drawings = [d for d in page.get_drawings() if d.get('fill') is not None
-                and 1 <= len(d['items']) <= 12
-                and all(item[0] in {'l', 'c', 're', 'qu'} for item in d['items'])
+    paths = page.get_drawings()
+    drawings = [d for d in paths if d.get('fill') is not None and flat_panel_path(d)
                 and d['rect'].width > 70 and d['rect'].height > 8
                 and area*.002 < d['rect'].get_area() < area*.8]
-    colored = [d for d in drawings if min(d['fill']) < .985]
+    colored = [d for d in drawings if min(d['fill']) < .985 or panel_outline(d, paths)]
     selected = []
     for d in sorted(colored, key=lambda d: -d['rect'].get_area()):
         box = d['rect']
@@ -56,23 +98,26 @@ def text_panels(page):
     for d in selected:
         box = d['rect']
         # A title strip can straddle the upper border, or sit inside it.
-        strips = [s for s in colored if s is not d and s['rect'].height < min(40, box.height*.75)
+        strips = [s for s in drawings if s is not d and s['rect'].height < min(40, box.height*.75)
                   and abs(s['rect'].y0-box.y0) <= s['rect'].height
-                  and (s['rect'] & box).width >= box.width*.7
-                  and max(s['fill'])-min(s['fill']) > .15
+                  and box.x0-.5 <= s['rect'].x0 < s['rect'].x1 <= box.x1+.5
+                  and (s['rect'] & box).width >= max(35, box.width*.15)
+                  and (s['fill'] != d['fill'] or panel_outline(d, paths))
                   and len(page.get_text(clip=s['rect']).strip()) >= 3]
         strip = max(strips, key=lambda s: s['rect'].width, default=None)
         if strip:
             title_paths.add(id(strip))
         full = box | strip['rect'] if strip else box
         rgb = strip['fill'] if strip else d['fill']
+        outline = panel_outline(d, paths)
         panels.append(dict(path=id(d), bbox=[round(v/page.rect.width if k%2==0 else v/page.rect.height, 5)
                                             for k,v in enumerate(full)],
                            title_bbox=([round(v/page.rect.width if k%2==0 else v/page.rect.height, 5)
                                         for k,v in enumerate(strip['rect'])] if strip else None),
                            color=[round(v, 4) for v in rgb],
                            background_color=visible_fill(drawings, box, strip['rect'] if strip else None),
-                           frame_color=[round(v, 4) for v in (d.get('color') or d['fill'])],
+                           frame_color=[round(v, 4) for v in (outline['color'] if outline else d['fill'])],
+                           frame_visible=outline is not None,
                            title_color=([round(v, 4) for v in strip['fill']] if strip else None),
                            title_text_color=(title_ink(page, strip['rect']) if strip else None),
                            method=METHOD))
@@ -111,9 +156,23 @@ def panel_environments(index, registry):
         if atom.get('source_panel'):
             groups[atom['source_panel']['id']].append(n)
     wrappers, evidence = [], []
+    # Saved native extractions may predate explicit frame evidence. Recheck
+    # the same live panel; never infer an outline from its semantic type.
+    live = {}
+    from pathlib import Path
+    source = index.source.get('source_pdf')
+    if groups and source and Path(source).is_file():
+        import pymupdf
+        with pymupdf.open(source) as pdf:
+            for page in {index.atoms[p[0]]['page'] for p in groups.values()}:
+                if 0 <= page < len(pdf):live[page] = text_panels(pdf[page])
     for pid,positions in groups.items():
         first,last = min(positions),max(positions)
         panel = index.atoms[first]['source_panel']
+        matches = [p for p in live.get(index.atoms[first]['page'],[])
+                   if max(abs(a-b) for a,b in zip(p['bbox'],panel['bbox'])) < .0001]
+        if len(matches) == 1:
+            panel = {**panel,'frame_visible':matches[0]['frame_visible']}
         lo,hi = index.prefix[first],index.prefix[last+1]
         row = dict(method=panel.get('method', METHOD), panel=pid, bbox=panel['bbox'], lo=lo, hi=hi,
                    page=index.atoms[first]['page']+1, color=panel['color'])

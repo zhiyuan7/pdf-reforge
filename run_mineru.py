@@ -17,6 +17,7 @@ import time
 
 from pipeline_progress import emit
 from mineru_checkpoint import checkpoint_path, expand_empty_pages, read_checkpoint, write_checkpoint, sha256, recognize_pages, normalize_middle_json
+from mineru_checkpoint import export_signature, export_hashes
 
 
 ROOT = Path(__file__).resolve().parent
@@ -190,6 +191,7 @@ def run(args: argparse.Namespace) -> Path:
             "input_pdf": str(pdf),
             "input_sha256": input_sha256,
             "mineru_version": version("mineru"),
+            "docvortex_version": version("docvortex"),
             "tier": args.tier,
             "ocr_mode": args.ocr_mode,
             "model_source": args.model_source,
@@ -209,6 +211,10 @@ def run(args: argparse.Namespace) -> Path:
             "elapsed_seconds": round(time.monotonic() - started, 2),
             "completed_at_utc": datetime.now(timezone.utc).isoformat(),
             "files": sorted(str(path.relative_to(staging)) for path in staging.rglob("*") if path.is_file()),
+            "export_signature": export_signature(input_sha256, [index+1 for index in page_indices],
+                args.tier, args.ocr_mode, args.model_source,
+                dict(mineru_version=version('mineru'), docvortex_version=version('docvortex'))),
+            "export_hashes": export_hashes(staging),
         }
         (staging / "manifest.json").write_text(
             json.dumps(manifest, ensure_ascii=False, indent=2) + "\n", encoding="utf-8"

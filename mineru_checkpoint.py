@@ -8,6 +8,20 @@ import os
 from copy import deepcopy
 from pathlib import Path
 
+EXPORT_METHOD = 'mineru_verified_export_v1'
+
+
+def export_signature(input_sha256, pages, tier, ocr_mode, model_source, versions):
+    return dict(method=EXPORT_METHOD, input_sha256=input_sha256,
+                source_page_numbers=list(pages), tier=tier, ocr_mode=ocr_mode,
+                model_source=model_source, **versions)
+
+
+def export_hashes(folder):
+    folder = Path(folder)
+    return {str(p.relative_to(folder)): sha256(p) for p in sorted(folder.rglob('*'))
+            if p.is_file() and p != folder/'manifest.json'}
+
 
 def normalize_middle_json(middle):
     """Make SDK-emitted null defaults readable without changing continuation flags.

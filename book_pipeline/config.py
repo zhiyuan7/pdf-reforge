@@ -75,6 +75,24 @@ def load_config(path=None):
         raise ValueError('input_mode must be auto or ocr')
     if config['translation'] not in {'auto', 'off'}:
         raise ValueError('translation must be auto or off')
+    service = config.get('translation_service', {'provider': 'deepseek'})
+    if not isinstance(service, dict) or service.get('provider') not in {'deepseek', 'volcengine'}:
+        raise ValueError('translation_service.provider must be deepseek or volcengine')
+    if set(service) - {'provider', 'glossary', 'free_quota'}:
+        raise ValueError('Unknown translation_service setting')
+    glossary = service.get('glossary', {})
+    if not isinstance(glossary, dict) or any(not isinstance(k, str) or not k.strip() or
+            not isinstance(v, str) or not v.strip() for k, v in glossary.items()):
+        raise ValueError('translation_service.glossary requires nonempty term pairs')
+    quota = service.get('free_quota')
+    if quota is not None:
+        import re
+        if (not isinstance(quota, dict) or set(quota) != {'month', 'characters', 'evidence'} or
+                not isinstance(quota['month'], str) or not re.fullmatch(r'\d{4}-(?:0[1-9]|1[0-2])', quota['month']) or
+                isinstance(quota['characters'], bool) or not isinstance(quota['characters'], int) or
+                not 0 <= quota['characters'] <= 2_000_000 or not isinstance(quota['evidence'], str) or
+                not quota['evidence'].strip()):
+            raise ValueError('translation_service.free_quota requires a verified month, character allowance and evidence')
     if config.get('publication_scope','book') not in {'book', 'excerpt'}:
         raise ValueError('publication_scope must be book or excerpt')
     toc_pages = config.get('toc_pages', [])

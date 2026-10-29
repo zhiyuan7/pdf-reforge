@@ -1,6 +1,6 @@
 \NeedsTeXFormat{LaTeX2e}
 \ProvidesPackage{book-style}[2026/10/02 Source-preserving LADR style]
-\RequirePackage{needspace,longtable,adjustbox,mathtools,arydshln}
+\RequirePackage{needspace,longtable,adjustbox,mathtools,arydshln,placeins}
 \RequirePackage{zref-abspage}
 \definecolor{structurecolor}{HTML}{3C71B7}
 \definecolor{main}{HTML}{00A652}
@@ -49,10 +49,17 @@
 \newdimen\BookMathWidth
 \NewDocumentCommand{\BookMath}{O{0pt} m}{%
  \begingroup\BookMathWidth=\dimexpr\linewidth-#1\relax
+ % Matrix/array struts use mathematical leading, independent of prose leading.
+ \linespread{1}\fontsize{\f@size}{1.1em}\selectfont
  \sbox{\BookMathBox}{$\displaystyle #2$}%
  \ifdim\wd\BookMathBox>\BookMathWidth
   \resizebox{\BookMathWidth}{!}{\usebox{\BookMathBox}}%
  \else\usebox{\BookMathBox}\fi\endgroup}
+% Explanatory displays wrap at prose spaces at the normal text size. Formula
+% fragments remain native math; a long explanation must not shrink the row.
+\newcommand{\BookProseMath}[1]{\parbox{\linewidth}{%
+ \centering\linespread{1}\fontsize{\f@size}{1.25em}\selectfont
+ \setlength{\parindent}{0pt}#1\par}}
 \providecommand{\BookFooter}{}
 \newcommand{\BookAnchor}[1]{\hypertarget{#1}{}\def\@currentHref{#1}}
 \newcommand{\BookLink}[2]{\hyperlink{#1}{#2}}
@@ -113,6 +120,10 @@
    \noindent #4#2\par}\nopagebreak[4]%
   \ifnum#1<3\relax\vspace{12pt}\else\ifnum#1<5\relax\vspace{6pt}\else\vspace{3pt}\fi\fi
  \fi}
+% Native body-sized italic subheads keep catalogue depth and destinations.
+\newcommand{\BookMinorHeading}[5]{\par\Needspace{4\baselineskip}\addvspace{6pt}%
+ \BookHeadingTOCType{#1}\BookAnchor{#3}\addcontentsline{toc}{\BookTOCType}{#5}%
+ {\normalfont\rmfamily\itshape\noindent #4#2\par}\nopagebreak[4]\vspace{3pt}}
 \tcbset{bookcommon/.style={enhanced,breakable,fontupper=\normalfont,
   coltitle=white,fonttitle=\sffamily\heiti\bfseries,boxrule=0.45pt,arc=4pt,outer arc=4pt,left=8pt,right=8pt,
   top=8pt,bottom=7pt,before skip=10pt,after skip=10pt,
@@ -154,7 +165,8 @@
 \newsavebox{\BookSideFirst}
 \newsavebox{\BookSideSecond}
 \newdimen\BookSideWidth
-\newenvironment{BookSideBySide}[3]{\par\addvspace{10pt}\begingroup
+\newcommand{\BookSideGap}{10pt}
+\newenvironment{BookSideBySide}[3]{\par\addvspace{\BookSideGap}\begingroup
   \edef\BookSideIndent{\the\parindent}\BookSideWidth=\linewidth
   \def\BookSideSecondWidth{#2}\def\BookSideFirstLeft{#3}
   \begin{lrbox}{\BookSideFirst}\begin{minipage}[t]{#1\BookSideWidth}
@@ -163,7 +175,7 @@
   \ifnum\BookSideFirstLeft=1
     \usebox{\BookSideFirst}\hfill\usebox{\BookSideSecond}%
   \else\usebox{\BookSideSecond}\hfill\usebox{\BookSideFirst}\fi
-  \par\prevdepth=-1000pt\vskip10pt\endgroup}
+  \par\prevdepth=-1000pt\vskip\BookSideGap\endgroup}
 \newcommand{\BookSideSwitch}{\par\end{minipage}\end{lrbox}%
   \begin{lrbox}{\BookSideSecond}\begin{minipage}[t]{\BookSideSecondWidth\BookSideWidth}
   \setlength{\parindent}{\BookSideIndent}\vspace{0pt}}
@@ -220,6 +232,13 @@
   {\color[rgb]{#2}\hrule height #1pt\relax}\nobreak\vskip8pt}
 \newcommand{\BookSourceRuleBefore}[2]{\par\addvspace{10pt}
   {\color[rgb]{#2}\hrule height #1pt\relax}\nobreak\vskip6pt}
+% Two actual source rules enclose an inset; no semantic box is inferred.
+\newenvironment{BookSourceInset}[4]{\definecolor{BookSourceInsetInk}{rgb}{#4}%
+ \begin{tcolorbox}[enhanced,breakable,blanker,
+  left skip=#1\linewidth,right skip=#2\linewidth,
+  borderline north={#3pt}{0pt}{BookSourceInsetInk},
+  borderline south={#3pt}{0pt}{BookSourceInsetInk},
+  left=0pt,right=0pt,top=6pt,bottom=6pt,before skip=10pt,after skip=10pt]}{\end{tcolorbox}}
 % Small source QR notes belong to the citation's line, including after a page
 % break. Keep their original labels and use the physical outside margin.
 \setlength{\marginparwidth}{26bp}
@@ -227,6 +246,10 @@
 \newcommand{\BookMarginAsset}[2]{\begingroup
   \marginpar{\centering\normalfont\scriptsize #1\par\vspace{2bp}#2}%
   \endgroup}
+% Text references need room for ordinary words such as "Notebook". The
+% existing QR/code width remains independent of this native-text note width.
+\newcommand{\BookMarginText}[1]{\begingroup
+  \setlength{\marginparwidth}{28bp}\BookMarginAsset{#1}{}\endgroup}
 % Reset the font strut too: assigning baselineskip alone leaves amsmath's
 % aligned rows stretched by the surrounding prose's leading.
 \newcommand{\BookMathCellSetup}{\linespread{1}\fontsize{\f@size}{1.2em}\selectfont}

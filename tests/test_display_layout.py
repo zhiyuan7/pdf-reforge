@@ -6,7 +6,7 @@ import unittest
 from book_pipeline.config import load_config
 from book_pipeline.ingestion.source import SourceIndex
 from book_pipeline.publishing.latex import Renderer, write_project
-from book_pipeline.publishing.display_layout import display_runs, prompt_space, list_display_scope, formula_image_prompts, bounded_display_units
+from book_pipeline.publishing.display_layout import display_runs, prompt_space, list_display_scope, formula_image_prompts, bounded_display_units, colon_introductions
 
 
 def display_index(rows):
@@ -24,6 +24,41 @@ DECISIONS = dict(corrections=[], joins=[], exclusions=[], bold_spans=[])
 
 
 class DisplayLayoutTests(unittest.TestCase):
+    def test_short_colon_introduction_requires_source_adjacency(self):
+        for following in [('text','Proposition 4.2. A result.'), ('display_math','x=y')]:
+            index=display_index([('text','The following result is useful:'),following])
+            self.assertEqual(len(colon_introductions(index)),1)
+            for defect in ('long','page','column','gap','caption','panel','boundary','excluded'):
+                altered=display_index([('text','The following result is useful:'),following])
+                barriers=[];skipped=[]
+                if defect=='long':altered.atoms[0]['content']='A lengthy narrative '*20+':'
+                if defect=='page':altered.atoms[1]['page']=1
+                if defect=='column':altered.atoms[1]['bbox']=[.91,.13,1,.15]
+                if defect=='gap':altered.atoms[1]['bbox']=[.1,.8,.9,.9]
+                if defect=='caption':altered.atoms[1]['role']='image_caption'
+                if defect=='panel':altered.atoms[1]['source_panel']={'id':'note'}
+                if defect=='boundary':barriers=[altered.prefix[1]]
+                if defect=='excluded':skipped=[(altered.prefix[1],altered.prefix[2],'excluded')]
+                self.assertEqual(colon_introductions(altered,barriers,skipped),[],defect)
+
+    def test_body_leading_is_applied_once_in_the_compiled_book(self):
+        import pymupdf
+        from book_pipeline.config import executable
+        from book_pipeline.publishing.compiler import compile_project
+        for first_text,second_text,spread in [('First baseline.','Second baseline.',1),
+                                               ('第一行文字','第二行文字',1.3)]:
+            index=display_index([('text',first_text),('text',second_text)])
+            with self.subTest(spread=spread),tempfile.TemporaryDirectory() as name:
+                root=Path(name)
+                write_project(index, DECISIONS, [], [], dict(title='Leading', author=''),
+                              load_config(), root, sample_mode=True)
+                result=compile_project(root, {t:executable(t) for t in ('xelatex','latexmk')})
+                self.assertTrue(result['success'], result['log_tail'])
+                with pymupdf.open(root/'main.pdf') as pdf:
+                    first=pdf[0].search_for(first_text)[0]
+                    second=pdf[0].search_for(second_text)[0]
+                    self.assertAlmostEqual(second.y0-first.y0, 10.5*1.56*spread*72/72.27, delta=.05)
+
     def unit_source(self):
         return display_index([('text','2.3 In this system:'),
                               ('display_math',r'\begin{aligned}x+y&=2\\x-y&=0\end{aligned}'),
@@ -76,7 +111,8 @@ class DisplayLayoutTests(unittest.TestCase):
                 audit=write_project(index,DECISIONS,[],[],dict(title='Units',author=''),load_config(),root,sample_mode=True)
                 p=root/'main.tex';tex=p.read_text()
                 p.write_text(tex.replace(r'\input{chapters/generated-001.tex}',
-                             '\\noindent\\rule{1pt}{580pt}\\par\n'+r'\input{chapters/generated-001.tex}'))
+                             '\\noindent\\rule{1pt}{\\dimexpr\\textheight-2\\baselineskip\\relax}\\par\n'
+                             +r'\input{chapters/generated-001.tex}'))
                 result=compile_project(root,{t:executable(t) for t in ('xelatex','latexmk')})
                 self.assertTrue(result['success'],result['log_tail'])
                 self.assertEqual(result['warnings'],[])

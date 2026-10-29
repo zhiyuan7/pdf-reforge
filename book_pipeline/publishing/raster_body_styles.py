@@ -14,18 +14,18 @@ from book_pipeline.config import digest, fingerprint, read, save
 from book_pipeline.ingestion.panels import intersection_fraction
 from book_pipeline.publishing.latin_word_ocr import confirmed_word, read_word, runtime_signature
 
-METHOD = 'exact_cpu_scan_body_typography_v33'
+METHOD = 'exact_cpu_scan_body_typography_v35'
 # Ownership is revalidated on every run. Both collectors now independently
 # read bounded numbered-label crops beside low-confidence formulas.
-OBSERVATION_METHOD = 'cpu_scan_body_word_observations_v17'
-CALIBRATION_OBSERVATION_METHOD = 'cpu_scan_body_word_observations_v19'
+OBSERVATION_METHOD = 'cpu_scan_body_word_observations_v18'
+CALIBRATION_OBSERVATION_METHOD = 'cpu_scan_body_word_observations_v20'
 DPI = 300
 FONTS = ('tiro', 'tibo', 'tiit', 'tibi')
 MIN_SCORE = .65
 MIN_MARGIN = .18
 MIN_SUPPORTED_SCORE = .55
 MIN_BOLD_SCORE = .70
-NUMBERED_LABEL = (r'(?:[A-Za-z]{4,}(?: [A-Za-z]{3,}){0,2} \d+(?:\.\d+)*:'
+NUMBERED_LABEL = (r'(?:[A-Za-z]{4,}(?: [A-Za-z]{3,}){0,2} \d+(?:\.\d+)*[.:](?=\s|$)'
                   r'|\d+(?:\.\d+)* [A-Za-z]{4,}\.)')
 NUMBERED_PREFIX = NUMBERED_LABEL+r'(?: [A-Za-z]{2})?'
 
@@ -1089,7 +1089,8 @@ def competing_times_observations(rgb, observed):
     This fallback never grants an axis absent from the original Times fit.
     """
     import cv2
-    from book_pipeline.publishing.scan_font_calibration import shape_scores, MIN_SLANT_SCORE, MIN_SLANT_MARGIN
+    from book_pipeline.publishing.scan_font_calibration import (shape_scores, metric_scores,
+        metric_style_scores, MIN_SLANT_SCORE, MIN_SLANT_MARGIN)
     result = []
     for line in observed:
         words = []
@@ -1104,6 +1105,20 @@ def competing_times_observations(rgb, observed):
             if any(not scores for scores in competing):
                 continue
             italic, bold = is_italic(word['scores']), is_bold(word['scores'])
+            # Shape fits stretch each font to the observed rectangle. Ink
+            # spread can then masquerade as bold. Require natural advances in
+            # both pixel views for weight, including the Times fallback.
+            if bold:
+                metric = metric_style_scores(metric_scores(binary, word['text'], 'times'),
+                                             metric_scores(gray, word['text'], 'times'))
+                if not is_bold(metric):
+                    if not italic:
+                        continue
+                    scores = word['scores']
+                    regular = max(scores['tiro'], scores['tibo'])
+                    slanted = max(scores['tiit'], scores['tibi'])
+                    word = dict(word, scores=dict(zip(FONTS,(regular,regular,slanted,slanted))))
+                    bold = False
             def contradicts(scores):
                 for enabled, positive, negative in ((italic,(2,3),(0,1)),(bold,(1,3),(0,2))):
                     if enabled and max(scores[k] for k in negative) >= MIN_SLANT_SCORE and (

@@ -44,6 +44,7 @@ class NativeHyphenTests(unittest.TestCase):
 
     def test_real_and_suspended_compounds_keep_hyphen_without_space(self):
         for left,right,expected in [('Use high-', 'dimensional spaces.', 'Use high-dimensional spaces.'),
+                                    ('Run the Matrix-', 'Plot program.', 'Run the Matrix-Plot program.'),
                                     ('Short- and long-', 'term effects.', 'Short- and long-term effects.')]:
             rows, lookup = source(left,right,True)
             text, _ = self.render(rows, lookup, ReviewClient('retain'))

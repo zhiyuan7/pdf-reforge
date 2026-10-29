@@ -4,7 +4,7 @@ from copy import deepcopy
 import re
 import unicodedata
 
-METHOD = 'page_footnotes_same_page_unique_v3'
+METHOD = 'page_footnotes_same_page_unique_v4'
 FORMULA_DEDUP_METHOD = 'page_footnote_overlapping_formula_copy_v1'
 MARGINALS = {'header', 'footer', 'page_number'}
 CIRCLED = '①②③④⑤⑥⑦⑧⑨⑩⑪⑫⑬⑭⑮⑯⑰⑱⑲⑳➀➁➂➃➄➅➆➇➈➉❶❷❸❹❺❻❼❽❾❿'
@@ -51,7 +51,7 @@ def marker_occurrences(text, marker, kind, *, allow_plain=False):
             before, after = text[:match.start()], text[match.end():]
             superscript = all(c in SUPERSCRIPTS for c in match[0])
             raised = re.search(r'(?:\^\s*\{?\s*|\\textsuperscript\s*\{\s*)$', before)
-            if not superscript and not raised and ((before and (before[-1].isalnum() and ord(before[-1]) < 128 or before[-1] in '.．_')) or (
+            if not superscript and not raised and not allow_plain and ((before and (before[-1].isalnum() and ord(before[-1]) < 128 or before[-1] in '.．_')) or (
                     after and (after[0].isalnum() and ord(after[0]) < 128 or after[0] in '.．_'))):
                 continue
             if kind == 'text' and not superscript:
@@ -67,7 +67,7 @@ def marker_occurrences(text, marker, kind, *, allow_plain=False):
         yield match.start(), match.end()
 
 
-def native_raised_marker(index, atom, marker):
+def native_raised_marker(index, atom, marker, start=None, end=None):
     """Corroborate plain native digits with the PDF's raised span flag."""
     if atom.get('extraction_method') != 'native' or marker['style'] != 'number':
         return False
@@ -79,8 +79,53 @@ def native_raised_marker(index, atom, marker):
     with pymupdf.open(pdf) as document:
         page = document[atom['page']]
         clip = pymupdf.Rect(*(v*(page.rect.width if k%2==0 else page.rect.height) for k,v in enumerate(box)))
-        return any(s['flags'] & 1 and s['text'].strip() == marker['text']
-                   for b in page.get_text('dict',clip=clip)['blocks'] for line in b.get('lines',[]) for s in line['spans'])
+        spans=[s for b in page.get_text('dict',clip=clip)['blocks'] for line in b.get('lines',[]) for s in line['spans']]
+        if start is None:
+            return any(s['flags'] & 1 and s['text'].strip() == marker['text'] for s in spans)
+        # A raised digit elsewhere in the same paragraph cannot corroborate
+        # an ordinary occurrence. Locate this complete literal prose atom.
+        observed='';flags=[]
+        for s in spans:
+            text=''.join(s['text'].split());observed+=text;flags.extend([s['flags']]*len(text))
+        text=''.join(atom['content'].split())
+        if not text or observed.count(text)!=1:return False
+        base=observed.index(text)
+        lo=base+len(''.join(atom['content'][:start].split()))
+        hi=base+len(''.join(atom['content'][:end].split()))
+        return lo<hi and observed[lo:hi]==marker['text'] and all(f&1 for f in flags[lo:hi])
+
+
+def native_leading_note_marker(index, block):
+    """Separate a tiny raised label from a digit-starting native note body."""
+    parts=block['parts']
+    if len(parts)<2 or parts[0]['kind']!='text':return None
+    token=parts[0]['text']
+    if not re.fullmatch(r'[0-9]{1,3}',token):return None
+    atom=index.atoms[index.ids[parts[0]['atom']]]
+    box=atom.get('block_bbox') or atom.get('bbox');source=index.source.get('source_pdf')
+    if atom.get('extraction_method')!='native' or not box or not source:return None
+    import pymupdf
+    with pymupdf.open(source) as pdf:
+        page=pdf[atom['page']]
+        clip=pymupdf.Rect(*(v*(page.rect.width if k%2==0 else page.rect.height) for k,v in enumerate(box)))
+        spans=[]
+        for b in page.get_text('rawdict',clip=clip)['blocks']:
+            for line in b.get('lines',[]):
+                for s in line['spans']:
+                    chars=[c for c in s['chars'] if c['c'].strip()]
+                    if chars:
+                        spans.append({**s,'text':''.join(c['c'] for c in chars),
+                            'origin':chars[0]['origin'],
+                            'bbox':[min(c['bbox'][0] for c in chars),min(c['bbox'][1] for c in chars),
+                                    max(c['bbox'][2] for c in chars),max(c['bbox'][3] for c in chars)]})
+    if len(spans)<2:return None
+    first,following=spans[:2]
+    if (first['text'].strip()!=token or following['size']<first['size']*1.1
+            or following['origin'][1]-first['origin'][1]<following['size']*.15
+            or not -.5<=following['bbox'][0]-first['bbox'][2]<=following['size']*.5):return None
+    style,number=marker_key(token)
+    start=parts[0]['lo']-block['lo']
+    return dict(text=token,style=style,number=number,start=start,end=start+len(token))
 
 
 def formula_tokens(text):
@@ -179,7 +224,7 @@ def classify_footnotes(index, plan):
         if is_note:
             if block['b'] in duplicate_blocks:
                 continue
-            marker = extract_marker(block['text'])
+            marker = native_leading_note_marker(index,block) or extract_marker(block['text'])
             notes.append(dict(id='footnote-'+block['b'], block=block['b'], page=block['page'],
                               section=owners.get(block['b']), lo=block['lo'], hi=block['hi'],
                               start=block['start'], end=block['end'], marker=marker,
@@ -200,6 +245,8 @@ def classify_footnotes(index, plan):
                 plain = (part['kind'] == 'text' and marker['text'] in part['text']
                          and native_raised_marker(index,atom,marker))
                 for a, z in marker_occurrences(part['text'], marker, part['kind'], allow_plain=plain):
+                    if plain and not native_raised_marker(index,atom,marker,part['offset']+a,part['offset']+z):
+                        continue
                     lo, hi = part['lo']+a, part['lo']+z
                     atom = index.atoms[index.ids[part['atom']]]
                     note['candidates'].append(dict(block=block['b'], atom=atom['id'], lo=lo, hi=hi,

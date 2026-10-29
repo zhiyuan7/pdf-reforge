@@ -134,6 +134,9 @@ class RasterStyleTests(unittest.TestCase):
             styles=style_ranges(dict(runs=[dict(atom='a',quote='vector',occurrence=0,italic=True,bold=False),
                 dict(atom='a',quote='scalar',occurrence=0,italic=False,bold=True),
                 dict(atom='a',quote='Chapter 6',occurrence=0,italic=True,bold=False)],uncertain_atoms=[]),items)
+            start=text.index('中文')
+            styles['a'].append(dict(method=METHOD,start=start,end=start+2,quote='中文',
+                                    italic=False,bold=False,cjk_family='calligraphic'))
             start=text.index('随机变量')
             styles['a'].append(dict(method=METHOD,start=start,end=start+4,quote='随机变量',
                                     italic=False,bold=True,cjk_family='sans'))
@@ -153,6 +156,9 @@ class RasterStyleTests(unittest.TestCase):
                 self.assertTrue(scalar['flags'] & 16,scalar)
                 cjk=next(s for s in spans if '随机变量' in s['text'])
                 self.assertIn('NotoSansCJK',cjk['font'])
+                kai=next(s for s in spans if '中文' in s['text'])
+                self.assertIn('FandolKai',kai['font'])
+                self.assertFalse(kai['flags'] & 2,kai)
                 self.assertIn('Chapter 6',''.join(p.get_text() for p in pdf))
                 self.assertEqual(len(pdf),1)
             start=text.index('Chapter 6')

@@ -1,4 +1,4 @@
-"""Isolate neighboring leaves only behind independently visible page edges.
+"""Isolate neighboring leaves and bare binding ghosts using independent pixels.
 
 The source PDF and OCR stay immutable. This derivative removes wholly external
 OCR groups and bounds subsequent recognition crops; it does not rewrite text.
@@ -9,7 +9,7 @@ from pathlib import Path
 from book_pipeline.config import fingerprint, read, save
 from book_pipeline.ingestion.source import SourceIndex, load_source, materialize_source
 
-METHOD = 'paired_physical_scan_edges_v1'
+METHOD = 'paired_edges_and_binding_strips_v2'
 
 
 def detect_frame(gray):
@@ -50,6 +50,14 @@ def horizontal_bounds(frame, top, bottom):
             min(at(frame['right'], y) for y in (top, bottom)))
 
 
+def recognition_bounds(review,top,bottom):
+    """Combine witnessed leaf edges and separately verified bare binding ink."""
+    left,right=horizontal_bounds(review['frame'],top,bottom) if review.get('frame') else (0,1)
+    if review.get('binding_recognition_bounds'):
+        a,z=review['binding_recognition_bounds'];left,right=max(left,a),min(right,z)
+    return left,right
+
+
 def frame_groups(index, page, frame):
     """Require both physical edges and edge-clipped OCR before narrowing scope."""
     groups = [[index.atoms[n] for n in positions] for positions in index.groups.values()
@@ -87,6 +95,8 @@ def recover_scan_page_frames(pdf, source_directory, directory, config=None, prog
     origin, directory = Path(source_directory), Path(directory)
     manifest = read(origin/'manifest.json')
     if manifest.get('scan_page_frames'):
+        if manifest['scan_page_frames'].get('method')!=METHOD:
+            raise ValueError('Scan edge policy changed;use raw OCR in an independent output directory')
         return origin
     index = SourceIndex(load_source(pdf, origin))
     reviews = {}
@@ -105,11 +115,23 @@ def recover_scan_page_frames(pdf, source_directory, directory, config=None, prog
                 continue
             scale = 1000/page.rect.width
             pix = page.get_pixmap(matrix=pymupdf.Matrix(scale, scale), colorspace=pymupdf.csGRAY)
-            frame = detect_frame(np.frombuffer(pix.samples, dtype=np.uint8).reshape(pix.height, pix.width))
+            gray=np.frombuffer(pix.samples, dtype=np.uint8).reshape(pix.height, pix.width)
+            frame = detect_frame(gray)
+            review=None
             if frame:
                 review = frame_groups(index, number, frame)
+            from book_pipeline.ingestion.scan_binding_artifacts import binding_groups
+            binding=binding_groups(index,number,gray)
+            if binding:
                 if review:
-                    reviews[str(number)] = review
+                    additions=[(g,t) for g,t in zip(binding['excluded_groups'],binding['excluded_text'])
+                               if g not in review['excluded_groups']]
+                    review['excluded_groups'] += [g for g,t in additions]
+                    review['excluded_text'] += [t for g,t in additions]
+                    review['binding_artifacts']=binding['binding_artifacts']
+                    review['binding_recognition_bounds']=binding['binding_recognition_bounds']
+                else:review=binding
+            if review:reviews[str(number)] = review
     if not reviews:
         return origin
     result = deepcopy(index.source)
@@ -128,5 +150,5 @@ def recover_scan_page_frames(pdf, source_directory, directory, config=None, prog
     target = materialize_source(SourceIndex(result), directory)
     saved = read(target/'manifest.json')
     save(target/'manifest.json', {**saved, 'scan_page_frames':dict(method=METHOD, pages=reviews)})
-    progress('隔离扫描邻页残片', len(reviews), len(reviews))
+    progress('隔离扫描边缘残片', len(reviews), len(reviews))
     return target

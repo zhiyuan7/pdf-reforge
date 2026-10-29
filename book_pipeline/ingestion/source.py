@@ -8,7 +8,7 @@ import re
 
 from book_pipeline.config import digest, read
 
-MATERIALIZATION_METHOD = 'source_roles_roundtrip_v5'
+MATERIALIZATION_METHOD = 'source_roles_and_equation_assets_roundtrip_v6'
 
 
 def selected_pages(spec, page_count):
@@ -262,7 +262,8 @@ def materialize_source(index, directory):
         nodes = []
         for pos in positions:
             atom = index.atoms[pos]
-            kind = {'math':'equation_inline', 'display_math':'equation', 'image':'image_body',
+            image_role=atom['role'] if atom['role'] in {'image_body','chart_body'} else 'image_body'
+            kind = {'math':'equation_inline', 'display_math':'equation', 'image':image_role,
                     'table':'table_body'}.get(atom['kind'], atom['role'])
             if kind == first['block_type'] and kind not in {'equation', 'image_body', 'table_body'}:
                 kind = 'text'
@@ -287,6 +288,11 @@ def materialize_source(index, directory):
         page = pages[first['page']]
         block = dict(index=len(page['blocks']), type=first['block_type'],
                      bbox=first.get('block_bbox'), level=first.get('level_hint'), content=nodes)
+        # Equation blocks are consumed as whole leaves by load_source, unlike
+        # ordinary parents whose children own assets. Keep their source crop
+        # on that same whole leaf through structural filtering/materialization.
+        if block['type']=='equation' and len(nodes)==1 and nodes[0].get('image_path'):
+            block['image_path']=nodes[0]['image_path']
         if first.get('source_panel'):
             block.update(source_panel=first['source_panel'], source_panel_title=first.get('source_panel_title',False))
         for key in ('writing_direction', 'ocr_table_recovery', 'recovery_issue', 'source_prose_end_bbox'):

@@ -72,7 +72,8 @@ class MarginAssetTests(unittest.TestCase):
             with self.subTest(long=long), tempfile.TemporaryDirectory() as name:
                 root=Path(name);index=self.source(root)
                 if long:
-                    index.atoms[1]['content']*=70
+                    # More than a full page at the default Latin leading.
+                    index.atoms[1]['content']*=110
                     index.atoms[1]['length']=len(index.atoms[1]['content'])
                     index=SourceIndex(index.source)
                 a,z=index.prefix[5:7]

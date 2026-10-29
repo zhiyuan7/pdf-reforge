@@ -1,0 +1,497 @@
+{
+  "batch": "modern-math-ai-20261029b",
+  "status": "active_two_scoped_passes_four_unconverted",
+  "independent_works": 6,
+  "books": [
+    {
+      "id": "bishop-neural-networks-pattern-recognition",
+      "title": "Neural Networks for Pattern Recognition",
+      "author": "Christopher M. Bishop",
+      "language": "en",
+      "topic": "neural_networks_statistical_pattern_recognition",
+      "publication_year": 1995,
+      "url": "https://haralick.org/ML/Neural_Networks_for_Pattern_Recognition_Christopher_Bishop.pdf",
+      "source_page": "https://www.microsoft.com/en-us/research/publication/neural-networks-pattern-recognition-2/",
+      "download_host_provenance": "Public ML reading collection on pattern-recognition researcher Robert Haralick website; bibliographic identity cross-checked with author Microsoft Research and Oxford University Press. No open licence asserted.",
+      "rights": "Oxford University Press copyright1995;public researcher-hosted copy,private local evaluation only;no redistribution.",
+      "sha256": "12dd8351af0137c4bb2731d6e8a02afa75bb49c284905a3572693d98819bf9d1",
+      "bytes": 23453886,
+      "resolved_url": "https://haralick.org/ML/Neural_Networks_for_Pattern_Recognition_Christopher_Bishop.pdf",
+      "content_type": "application/pdf",
+      "downloaded_at": "2026-10-29T13:59:07.563993+08:00",
+      "status": "scoped_artifact_and_quality_pass_with_reviewed_styles",
+      "artifact_success": true,
+      "quality_pass": true,
+      "pdf_pages": 498,
+      "source_type": "real_scan",
+      "real_scanned_book": true,
+      "controlled_rasterization": false,
+      "original_image_only": false,
+      "native_layer_check": {
+        "body_pages_checked": 486,
+        "median_text_characters": 2142.0,
+        "full_page_raster_fraction": 1.0,
+        "image_only_body_pages": 3
+      },
+      "variants": [
+        "scan"
+      ],
+      "pages": [
+        145,
+        146
+      ],
+      "candidate_pages": [
+        145,
+        146
+      ],
+      "canonical_budget_sha256": "12dd8351af0137c4bb2731d6e8a02afa75bb49c284905a3572693d98819bf9d1",
+      "source_images": [
+        "output/automation/iterations/20261029-130001/bishop-neural-networks-pattern-recognition-p145.png",
+        "output/automation/iterations/20261029-130001/bishop-neural-networks-pattern-recognition-p146.png"
+      ],
+      "preflight": "output/automation/iterations/20261029-130001/next-inspection.json",
+      "scan_note": "Original monochrome page images throughout body,with inaccurate hidden OCR. Selected145–146/printed130–131 show light speckles,uneven glyph edges,right binding streak on145,mild tilt and different margins. Modern technical neural-network proof and Fig4.11,not historical material. PDF Reforge did not rasterize this source.",
+      "sample_pdf": "output/benchmark/samples/bishop-neural-networks-pattern-recognition-scan.pdf",
+      "sample_sha256": "013569cfa313e81f30eb9966bca64774b05bed62ca151b8a41684d40bc4f5f24",
+      "scope": "PhysicalPDF145–146 / printed130–131 only;true scan with old hidden OCR;English preserved.6 exact italic runs manually reviewed;no full-book claim.",
+      "layout_features": [
+        "true_scan_with_old_hidden_ocr",
+        "two_layer_network_approximation_proof",
+        "Fourier_cosine_sums",
+        "step_function_plot_and_long_caption",
+        "cross_page_formula_intro",
+        "right_edge_binding_noise",
+        "mild_skew_and_speckles"
+      ],
+      "printed_pages": [
+        130,
+        131
+      ],
+      "source_image_review": "Both selected original page images visually checked;source classification and layout features recorded. This is sample selection,not OCR/product quality acceptance.",
+      "cpu_preflight": "output/benchmark/preflight/bishop-real-scan-cpu-v264",
+      "cpu_preflight_status": "reviewed_unconverted",
+      "cpu_cache": "output/benchmark/preflight/bishop-real-scan-cpu-v264",
+      "cpu_cache_validation": "output/automation/iterations/20261029-130001/bishop-edge-validation.json",
+      "filtered_source": "output/benchmark/preflight/bishop-real-scan-edge-v266",
+      "cpu_preflight_review": "output/automation/iterations/20261029-130001/bishop-preflight-checkpoint.json",
+      "ocr_raw_issue": "Outer binding stroke hallucinated as one aside_text group;source-bound pixel filtering removes only that group in structural derivative. Raw OCR and original preserved.",
+      "quality_review": "output/automation/iterations/20261029-180002/summary.md",
+      "quality_evidence": "output/automation/iterations/20261029-180002/bishop-validation.json",
+      "output": "output/benchmark/runs/next-v274-bishop-reviewed/results.json",
+      "pdf": "/app/output/benchmark/runs/next-v274-bishop-reviewed/bishop-neural-networks-pattern-recognition-scan/pdf/latex/main.pdf",
+      "latex": "/app/output/benchmark/runs/next-v274-bishop-reviewed/bishop-neural-networks-pattern-recognition-scan/pdf/latex/main.tex",
+      "original_full_removed": true,
+      "original_local_path_removed": "output/benchmark/sources/bishop-neural-networks-pattern-recognition.pdf",
+      "retained_sample": "output/benchmark/samples/bishop-neural-networks-pattern-recognition-scan.pdf",
+      "cleanup_receipt": "output/automation/cleanup-20261029-bishop.json",
+      "previous_artifact_paths_may_be_removed": true
+    },
+    {
+      "id": "atkinson-han-stewart-numerical-ode",
+      "title": "Numerical Solution of Ordinary Differential Equations",
+      "author": "Kendall Atkinson; Weimin Han; David Stewart",
+      "language": "en",
+      "topic": "numerical_analysis_ordinary_differential_equations",
+      "publication_year": 2009,
+      "url": "https://homepage.math.uiowa.edu/~atkinson/papers/NAODE_Book.pdf",
+      "source_page": "https://homepage.math.uiowa.edu/~atkinson/papers/NAODE_Book.pdf",
+      "rights": "Author University of Iowa hosted book manuscript;Wiley copyright2009,no open licence asserted;private local evaluation only.",
+      "sha256": "d565582846a6abae8f53e06e132776304ce61505ab35c6a5b158be1965a209a9",
+      "bytes": 1504644,
+      "resolved_url": "https://homepage.math.uiowa.edu/~atkinson/papers/NAODE_Book.pdf",
+      "content_type": "application/pdf",
+      "downloaded_at": "2026-10-29T13:59:04.307335+08:00",
+      "status": "scoped_artifact_and_quality_pass_with_reviewed_overrides",
+      "artifact_success": true,
+      "quality_pass": true,
+      "pdf_pages": 261,
+      "source_type": "born_digital",
+      "real_scanned_book": false,
+      "controlled_rasterization": false,
+      "original_image_only": false,
+      "native_layer_check": {
+        "body_pages_checked": 249,
+        "median_text_characters": 1659,
+        "full_page_raster_fraction": 0.0,
+        "image_only_body_pages": 7
+      },
+      "variants": [
+        "native"
+      ],
+      "pages": [
+        38,
+        39
+      ],
+      "candidate_pages": [
+        38,
+        39
+      ],
+      "canonical_budget_sha256": "d565582846a6abae8f53e06e132776304ce61505ab35c6a5b158be1965a209a9",
+      "source_images": [
+        "output/automation/iterations/20261029-130001/atkinson-han-stewart-numerical-ode-p38.png",
+        "output/automation/iterations/20261029-130001/atkinson-han-stewart-numerical-ode-p39.png"
+      ],
+      "preflight": "output/automation/iterations/20261029-130001/next-inspection.json",
+      "sample_pdf": "output/benchmark/samples/atkinson-han-stewart-numerical-ode-native.pdf",
+      "sample_sha256": "de42e6adcd59cdf34b62b21c1d37805508d1cce53c2d15a933374a47bb636518",
+      "scope": "PhysicalPDF38–39 / printed29–30 only; native PDF with bitmap math routed through CPU OCR,not true scan.3 exact style runs and label dot manually reviewed;not full-book acceptance.",
+      "layout_features": [
+        "native_text_with_inline_bitmap_mathematics",
+        "ruled_numerical_error_table_2_3",
+        "Example2_7_terminal_solid_square",
+        "numerical_stability_bounds",
+        "crop_marks_in_original_margins",
+        "cross_page_section_flow"
+      ],
+      "printed_pages": [
+        29,
+        30
+      ],
+      "source_image_review": "Both selected original page images visually checked;source classification and layout features recorded. This is sample selection,not OCR/product quality acceptance.",
+      "cpu_preflight": "output/benchmark/preflight/atkinson-two-page-cpu-v272",
+      "cpu_preflight_pages": [
+        38,
+        39
+      ],
+      "cpu_preflight_sample_pages": [
+        1,
+        2
+      ],
+      "cpu_preflight_status": "two_pages_reviewed_with_unresolved_raw_formula_issues_unconverted",
+      "cpu_preflight_review": "output/automation/iterations/20261029-170002/atkinson-two-page-preflight-checkpoint.json",
+      "cpu_preflight_issues": [],
+      "local_render_validation": "output/automation/iterations/20261029-160002/after/diagnostic.json",
+      "local_render_status": "prior_three_paragraph_end_marks_reviewed_formal_two_pages_pending",
+      "quality_review": "output/automation/iterations/20261029-180002/summary.md",
+      "quality_evidence": "output/automation/iterations/20261029-180002/atkinson-validation.json",
+      "output": "output/benchmark/runs/next-v277-atkinson-reviewed/results.json",
+      "pdf": "/app/output/benchmark/runs/next-v277-atkinson-reviewed/atkinson-han-stewart-numerical-ode-native/pdf/latex/main.pdf",
+      "latex": "/app/output/benchmark/runs/next-v277-atkinson-reviewed/atkinson-han-stewart-numerical-ode-native/pdf/latex/main.tex",
+      "original_full_removed": true,
+      "original_local_path_removed": "output/benchmark/sources/atkinson-han-stewart-numerical-ode.pdf",
+      "retained_sample": "output/benchmark/samples/atkinson-han-stewart-numerical-ode-native.pdf",
+      "cleanup_receipt": "output/automation/cleanup-20261029-atkinson.json",
+      "previous_artifact_paths_may_be_removed": true
+    },
+    {
+      "id": "bubeck-convex-optimization-complexity",
+      "title": "Convex Optimization: Algorithms and Complexity",
+      "author": "Sébastien Bubeck",
+      "language": "en",
+      "topic": "optimization",
+      "publication_year": 2015,
+      "url": "https://arxiv.org/pdf/1405.4980v2",
+      "source_page": "https://arxiv.org/abs/1405.4980",
+      "rights": "Author-deposited arXiv v2 monograph,2015;copyright retained/arXiv distribution licence,no open derivative licence asserted;private local evaluation only.",
+      "local_path": "output/benchmark/sources/bubeck-convex-optimization-complexity.pdf",
+      "sha256": "4d5cd5428a8e627fa2b7ee80791259c2f17e6ae5bf68cf7c78aee1fcefdc05f2",
+      "bytes": 1163209,
+      "resolved_url": "https://arxiv.org/pdf/1405.4980v2",
+      "content_type": "application/pdf",
+      "downloaded_at": "2026-10-29T13:59:02.844690+08:00",
+      "status": "source_excerpt_selected_unconverted",
+      "artifact_success": false,
+      "quality_pass": false,
+      "pdf_pages": 130,
+      "source_type": "born_digital",
+      "real_scanned_book": false,
+      "controlled_rasterization": false,
+      "original_image_only": false,
+      "native_layer_check": {
+        "body_pages_checked": 118,
+        "median_text_characters": 1498.0,
+        "full_page_raster_fraction": 0.0,
+        "image_only_body_pages": 0
+      },
+      "variants": [
+        "native"
+      ],
+      "pages": [
+        59,
+        60
+      ],
+      "candidate_pages": [
+        59,
+        60
+      ],
+      "canonical_budget_sha256": "4d5cd5428a8e627fa2b7ee80791259c2f17e6ae5bf68cf7c78aee1fcefdc05f2",
+      "source_images": [
+        "output/automation/iterations/20261029-130001/bubeck-convex-optimization-complexity-p59.png",
+        "output/automation/iterations/20261029-130001/bubeck-convex-optimization-complexity-p60.png"
+      ],
+      "preflight": "output/automation/iterations/20261029-130001/next-inspection.json",
+      "sample_pdf": "output/benchmark/samples/bubeck-convex-optimization-complexity-native.pdf",
+      "sample_sha256": "5d5f3b44bee74267bb7c439f8b855bf2b89a282726a68692a46a3f4f7d9a55de",
+      "scope": "Only physicalPDF[59, 60] selected;unconverted,no LaTeX/PDF artifact or quality pass.",
+      "layout_features": [
+        "single_column_native_english",
+        "paired_vector_circle_intersection_diagrams",
+        "gray_shading_and_dashed_boundaries",
+        "dense_norms_and_aligned_derivation",
+        "cross_page_paragraph",
+        "italic_minor_subheadings"
+      ],
+      "printed_pages": [
+        286,
+        287
+      ],
+      "source_image_review": "Both selected original page images visually checked;source classification and layout features recorded. This is sample selection,not OCR/product quality acceptance.",
+      "native_geometry_preflight": "output/automation/iterations/20261029-150002/native-geometry-validation.json",
+      "native_geometry_status": "source_candidates_reviewed_only_no_formal_conversion"
+    },
+    {
+      "id": "datawhale-pumpkin-book",
+      "title": "南瓜书：《机器学习》公式详解（开源2.0版本）",
+      "author": "Datawhale编委会（Sm1les; archwalker; jbb0523等）",
+      "language": "zh",
+      "topic": "machine_learning_mathematical_derivations",
+      "publication_year": 2023,
+      "url": "https://github.com/datawhalechina/pumpkin-book/releases/download/v2.0.0/pumpkin_book.pdf",
+      "source_page": "https://github.com/datawhalechina/pumpkin-book",
+      "rights": "CC BY-NC-SA4.0 per author repository and downloaded front matter;independent authored formula-explanation companion.",
+      "local_path": "output/benchmark/sources/datawhale-pumpkin-book.pdf",
+      "sha256": "9404da965f5a3ac8f25e3d1e0465b369df87d7ec4eee2a836a87bb3f425a0d0d",
+      "bytes": 3920473,
+      "resolved_url": "https://release-assets.githubusercontent.com/github-production-release-asset/162783195/e92ddc2a-3e3a-47a3-ba61-ac0338fc4ac6?sp=r&sv=2018-11-09&sr=b&spr=https&se=2026-10-29T06%3A51%3A45Z&rscd=attachment%3B+filename%3Dpumpkin_book.pdf&rsct=application%2Foctet-stream&skoid=96c2d410-5711-43a1-aedd-ab1947aa7ab0&sktid=398a6654-997b-47e9-b12b-9515b896b4de&skt=2026-10-29T05%3A51%3A06Z&ske=2026-10-29T06%3A51%3A45Z&sks=b&skv=2018-11-09&sig=J2iBwkBtyvqSGHkUfXZTMOzkwcljmGVVkQxKeKtylR4%3D&jwt=eyJ0eXAiOiJKV1QiLCJhbGciOiJIUzI1NiJ9.eyJpc3MiOiJnaXRodWIuY29tIiwiYXVkIjoicmVsZWFzZS1hc3NldHMuZ2l0aHVidXNlcmNvbnRlbnQuY29tIiwia2V5Ijoia2V5MSIsImV4cCI6MTc5MzI1Mzg0MiwibmJmIjoxNzkzMjUzNTQyLCJwYXRoIjoicmVsZWFzZWFzc2V0cHJvZHVjdGlvbi5ibG9iLmNvcmUud2luZG93cy5uZXQifQ.w21nN5cBaVEuQ9nGt96B_QWEmd4eRSFg80QWlLSsd5g&response-content-disposition=attachment%3B%20filename%3Dpumpkin_book.pdf&response-content-type=application%2Foctet-stream",
+      "content_type": "application/octet-stream",
+      "downloaded_at": "2026-10-29T13:59:03.291371+08:00",
+      "status": "two_page_cpu_preflight_running_unconverted",
+      "artifact_success": false,
+      "quality_pass": false,
+      "pdf_pages": 196,
+      "source_type": "born_digital",
+      "real_scanned_book": false,
+      "controlled_rasterization": false,
+      "original_image_only": false,
+      "native_layer_check": {
+        "body_pages_checked": 184,
+        "median_text_characters": 1373.0,
+        "full_page_raster_fraction": 0.0,
+        "image_only_body_pages": 0
+      },
+      "variants": [
+        "native"
+      ],
+      "pages": [
+        76,
+        77
+      ],
+      "candidate_pages": [
+        76,
+        77
+      ],
+      "canonical_budget_sha256": "9404da965f5a3ac8f25e3d1e0465b369df87d7ec4eee2a836a87bb3f425a0d0d",
+      "source_images": [
+        "output/automation/iterations/20261029-130001/datawhale-pumpkin-book-p76.png",
+        "output/automation/iterations/20261029-130001/datawhale-pumpkin-book-p77.png"
+      ],
+      "preflight": "output/automation/iterations/20261029-130001/next-inspection.json",
+      "first_release_year": 2020,
+      "release": "v2.0.0",
+      "release_date": "2023-11-17",
+      "sample_pdf": "output/benchmark/samples/datawhale-pumpkin-book-native.pdf",
+      "sample_sha256": "fd561c7f4e7e3107fa2ebe5360702d6587b3690b7befde493e046f932136a536",
+      "scope": "Only physicalPDF[76, 77] selected;unconverted,no LaTeX/PDF artifact or quality pass.",
+      "layout_features": [
+        "single_column_native_chinese",
+        "very_dense_unlabelled_aligned_MLE_trace_derivation",
+        "bold_vectors_and_covariance_matrices",
+        "gray_one_line_note",
+        "running_promotional_header_footer",
+        "naive_Bayes_coin_likelihood_example",
+        "partially_unusable_math_encoding"
+      ],
+      "printed_pages": null,
+      "source_image_review": "Both selected original page images visually checked;source classification and layout features recorded. This is sample selection,not OCR/product quality acceptance.",
+      "printed_folio_note": "No visible numeric folio on the selected page images;only physical PDF indices are asserted.",
+      "cpu_preflight_target": "output/benchmark/preflight/pumpkin-two-page-cpu-v278",
+      "cpu_preflight_pages": [
+        76
+      ],
+      "cpu_preflight_sample_pages": [
+        1,
+        2
+      ],
+      "cpu_preflight_status": "running_unreviewed_no_formal_artifact",
+      "cpu_preflight_review": "output/automation/iterations/20261029-170002/final/diagnostic.json",
+      "cpu_preflight_issues": [
+        "Raw first derivation has spurious enclosing vertical bars",
+        "Opening inline variable/vector typography needs formal review",
+        "Page77 and formal two-page conversion pending"
+      ],
+      "local_render_validation": "output/automation/iterations/20261029-170002/final/diagnostic.json",
+      "local_render_status": "three_single_column_derivation_arrays_display_style_verified_not_formal_acceptance"
+    },
+    {
+      "id": "levin-discrete-mathematics-open",
+      "title": "Discrete Mathematics: An Open Introduction, Fourth Edition",
+      "author": "Oscar Levin",
+      "language": "en",
+      "topic": "discrete_mathematics",
+      "publication_year": 2025,
+      "url": "https://discrete.openmathbooks.org/pdfs/dmoi4.pdf",
+      "source_page": "https://discrete.openmathbooks.org/dmoi4.html",
+      "rights": "CC BY-NC-SA4.0 explicitly in downloaded copyright page.",
+      "local_path": "output/benchmark/sources/levin-discrete-mathematics-open.pdf",
+      "sha256": "da85572c79111d63ce90e18a116e0551732c6a3725b7bc08aa16b3f4557d55ac",
+      "bytes": 2401424,
+      "resolved_url": "https://discrete.openmathbooks.org/pdfs/dmoi4.pdf",
+      "content_type": "application/pdf",
+      "downloaded_at": "2026-10-29T13:59:03.438571+08:00",
+      "status": "source_excerpt_selected_unconverted",
+      "artifact_success": false,
+      "quality_pass": false,
+      "pdf_pages": 549,
+      "source_type": "born_digital",
+      "real_scanned_book": false,
+      "controlled_rasterization": false,
+      "original_image_only": false,
+      "native_layer_check": {
+        "body_pages_checked": 537,
+        "median_text_characters": 1882,
+        "full_page_raster_fraction": 0.0,
+        "image_only_body_pages": 5
+      },
+      "variants": [
+        "native"
+      ],
+      "pages": [
+        151,
+        152
+      ],
+      "candidate_pages": [
+        151,
+        152
+      ],
+      "canonical_budget_sha256": "da85572c79111d63ce90e18a116e0551732c6a3725b7bc08aa16b3f4557d55ac",
+      "source_images": [
+        "output/automation/iterations/20261029-130001/levin-discrete-mathematics-open-p151.png",
+        "output/automation/iterations/20261029-130001/levin-discrete-mathematics-open-p152.png"
+      ],
+      "preflight": "output/automation/iterations/20261029-130001/next-inspection.json",
+      "version_note": "Selected4th-edition PDF copyright2013–2025;no exact printpublicationdate claimed.",
+      "sample_pdf": "output/benchmark/samples/levin-discrete-mathematics-open-native.pdf",
+      "sample_sha256": "ceeeefffa3ff1a98135bf985b5d1b78ed4161688350f1df5ee45d3acc17872b8",
+      "scope": "Only physicalPDF[151, 152] selected;unconverted,no LaTeX/PDF artifact or quality pass.",
+      "layout_features": [
+        "single_column_native_english",
+        "blank_v_e_f_exercise_table",
+        "blue_theorem_panel_with_overhanging_title",
+        "rounded_green_investigate_panel",
+        "vector_planar_graphs_and_dashed_edges",
+        "nested_exercise_labels",
+        "cross_page_graph_argument"
+      ],
+      "printed_pages": [
+        131,
+        132
+      ],
+      "source_image_review": "Both selected original page images visually checked;source classification and layout features recorded. This is sample selection,not OCR/product quality acceptance.",
+      "native_geometry_preflight": "output/automation/iterations/20261029-150002/native-geometry-validation.json",
+      "native_geometry_status": "source_candidates_reviewed_only_no_formal_conversion"
+    },
+    {
+      "id": "durrett-probability-theory-examples",
+      "title": "Probability: Theory and Examples, Fifth Edition",
+      "author": "Rick Durrett",
+      "language": "en",
+      "topic": "probability_statistics",
+      "publication_year": 2019,
+      "url": "https://sites.math.duke.edu/~rtd/PTE/PTE5_011119.pdf",
+      "source_page": "https://sites.math.duke.edu/~rtd/PTE/pte.html",
+      "rights": "Author Duke University page links Version5 PDF;copyright2019 all rights reserved,no open licence asserted;private local evaluation only.",
+      "local_path": "output/benchmark/sources/durrett-probability-theory-examples.pdf",
+      "sha256": "aeac36cbf5e44c53d69fa60a2d29a393e2d0e8c955ee103bd845d925fd910886",
+      "bytes": 2195717,
+      "resolved_url": "https://sites.math.duke.edu/~rtd/PTE/PTE5_011119.pdf",
+      "downloaded_at": "2026-10-29T14:01:34.245719+08:00",
+      "status": "source_excerpt_selected_unconverted",
+      "artifact_success": false,
+      "quality_pass": false,
+      "pdf_pages": 490,
+      "source_type": "born_digital",
+      "real_scanned_book": false,
+      "controlled_rasterization": false,
+      "original_image_only": false,
+      "native_layer_check": {
+        "body_pages_checked": 478,
+        "median_text_characters": 1611.0,
+        "full_page_raster_fraction": 0.0,
+        "image_only_body_pages": 0
+      },
+      "variants": [
+        "native"
+      ],
+      "pages": [
+        243,
+        244
+      ],
+      "candidate_pages": [
+        243,
+        244
+      ],
+      "canonical_budget_sha256": "aeac36cbf5e44c53d69fa60a2d29a393e2d0e8c955ee103bd845d925fd910886",
+      "source_images": [
+        "output/automation/iterations/20261029-130001/durrett-probability-theory-examples-p243.png",
+        "output/automation/iterations/20261029-130001/durrett-probability-theory-examples-p244.png"
+      ],
+      "preflight": "output/automation/iterations/20261029-130001/next-inspection.json",
+      "sample_pdf": "output/benchmark/samples/durrett-probability-theory-examples-native.pdf",
+      "sample_sha256": "89f37cacc59d05b72ba840f15f1b0a82c823096efd90f0747768774a20903d44",
+      "scope": "Only physicalPDF[243, 244] selected;unconverted,no LaTeX/PDF artifact or quality pass.",
+      "layout_features": [
+        "single_column_native_english",
+        "dense_martingale_theorems_proofs",
+        "indicator_functions_stopping_times",
+        "multi_integral_aligned_derivation",
+        "bold_labels_italic_statements",
+        "terminal_open_squares",
+        "partial_terminal_example"
+      ],
+      "printed_pages": [
+        235,
+        236
+      ],
+      "source_image_review": "Both selected original page images visually checked;source classification and layout features recorded. This is sample selection,not OCR/product quality acceptance.",
+      "source_caveat": "In the selected Holder step original visibly prints p/(1-p),while surrounding results print p/(p-1). Preserve the actual printed denominator;do not silently repair mathematical content. Example4.4.5 continues beyond selected scope."
+    }
+  ],
+  "acquisition_failures": [
+    {
+      "id": "blitzstein-hwang-introduction-probability",
+      "title": "Introduction to Probability, Second Edition",
+      "author": "Joseph K. Blitzstein; Jessica Hwang",
+      "language": "en",
+      "topic": "probability_statistics",
+      "publication_year": 2019,
+      "url": "https://drive.usercontent.google.com/download?id=1VmkAAGOYCTORq1wxSQqy255qLJjTNvBI&export=download",
+      "source_page": "https://stat110.hsites.harvard.edu/",
+      "author_download_page": "https://probabilitybook.net/",
+      "rights": "Author Harvard Stat110 page links the free second-edition PDF via probabilitybook.net/public Google Drive. CRC Press copyright retained;no open licence asserted;private local evaluation only.",
+      "status": "download_restricted_not_selected",
+      "error_type": "ValueError",
+      "error": "Author-linked public Drive file explicitly disables downloads for viewers;not downloaded,no alternate mirror sought."
+    }
+  ],
+  "created_at": "2026-10-29T14:04:30.191938+08:00",
+  "priority_order": [
+    "bishop-neural-networks-pattern-recognition",
+    "durrett-probability-theory-examples",
+    "atkinson-han-stewart-numerical-ode",
+    "datawhale-pumpkin-book",
+    "levin-discrete-mathematics-open",
+    "bubeck-convex-optimization-complexity"
+  ],
+  "topic_groups": [
+    "probability_statistics",
+    "numerical_analysis",
+    "optimization",
+    "discrete_mathematics",
+    "machine_learning_neural_networks"
+  ],
+  "coverage_gaps": [
+    "Continuous double-column prose is not yet represented or verified.",
+    "Chinese real-scan coverage remains prior Fudan regression;this batch Chinese source is native text."
+  ],
+  "scope": "Six new independent modern technical works across numerical analysis,probability,optimization,discrete mathematics and ML/NN. One original English true scan with old OCR;five born-digital works. Source samples reviewed only;zero converted/quality-passed in this batch."
+}

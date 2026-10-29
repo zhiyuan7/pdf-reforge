@@ -1,6 +1,7 @@
 """Deterministic rendering, original-number anchors and exact source accounting."""
 from __future__ import annotations
 
+from bisect import bisect_right
 from collections import defaultdict
 from html.parser import HTMLParser
 from pathlib import Path
@@ -108,6 +109,7 @@ def unicode_symbol(char, math=False):
              '∪':r'\cup','∩':r'\cap',
              '⊆':r'\subseteq','⊥':r'\perp','⊤':r'\top','∥':r'\parallel',
              '∧':r'\land','∨':r'\lor','¬':r'\neg','∞':r'\infty',
+             '⇒':r'\Rightarrow','⇐':r'\Leftarrow','⇔':r'\Leftrightarrow','∼':r'\sim',
              '∴':r'\therefore','∵':r'\because'}
     if char in symbols:
         return symbols[char] if math else r'\ensuremath{'+symbols[char]+'}'
@@ -313,7 +315,7 @@ def table_tex(html, in_box=False):
         return "\n{\\setlength{\\LTleft}{\\fill}\\setlength{\\LTright}{\\fill}\n\\begin{longtable}{" + specification + "}\n\\toprule\n" + content + "\n\\bottomrule\n\\end{longtable}}\n"
     if len(rows) > 12:
         return None
-    return "\n\\par\\noindent\\makebox[\\linewidth][c]{%\n\\begin{adjustbox}{max width=\\linewidth}\n\\begin{tabular}{" + "c" * columns + "}\n\\toprule\n" + content + "\n\\bottomrule\n\\end{tabular}\n\\end{adjustbox}}\\par\n"
+    return "\n\\par\\addvspace{6pt}\\noindent\\makebox[\\linewidth][c]{%\n\\begin{adjustbox}{max width=\\linewidth}\n\\begin{tabular}{" + "c" * columns + "}\n\\toprule\n" + content + "\n\\bottomrule\n\\end{tabular}\n\\end{adjustbox}}\\par\\addvspace{6pt}\n"
 
 
 def footnote_marker_span(content, start, end):
@@ -353,6 +355,13 @@ class Renderer:
         self.raster_marks, self.raster_labels, _ = raster_marks(
             index, panels, directory,
             [*registry, *decisions['exclusions'], *decisions.get('page_footnotes', [])], changed)
+        from book_pipeline.publishing.native_ocr_marks import native_ocr_marks
+        self.native_ocr_punctuation, fallback_marks, fallback_evidence = native_ocr_marks(
+            index, directory, [*decisions['exclusions'], *decisions.get('page_footnotes', [])],
+            changed | set(decisions.get('formula_repairs', {})),
+            {**{a:r['latex'] for a,r in decisions.get('native_math_styles', {}).items()},
+             **{a:r['text'] for a,r in decisions.get('native_math_text', {}).items()}})
+        self.raster_marks.update(fallback_marks)
         from book_pipeline.publishing.raster_inline_ink import raster_inline_ink
         self.raster_inline_ink = raster_inline_ink(index, directory,
             [*decisions['exclusions'], *decisions.get('page_footnotes', [])], changed)
@@ -361,6 +370,12 @@ class Renderer:
                 [*decisions['exclusions'], *decisions.get('page_footnotes', [])], changed).items():
             self.raster_inline_ink.setdefault(atom, []).extend(runs)
             self.raster_inline_ink[atom].sort(key=lambda r: r['start'])
+        from book_pipeline.publishing.native_code import recover_native_code
+        self.native_code,self.native_code_rows=recover_native_code(index,directory,changed)
+        # A paired code/caption row owns its panel inside the main column.
+        # Keeping the old outer wrapper would also put the caption in the box.
+        panels=[p for p in panels if not any(r['code_range']==[p['lo'],p['hi']]
+                                             for r in self.native_code_rows)]
         registry = [*registry, *panels]
         self.index, self.decisions, self.registry = index, decisions, registry
         # A quote-only fragment beside math or a link inherits its source
@@ -379,6 +394,9 @@ class Renderer:
         self.formula_repairs = decisions.get('formula_repairs', {})
         self.table_repairs = decisions.get('table_repairs', {})
         self.source_order_layout=[*panel_evidence, *raster_evidence, *self.side_note_rows]
+        self.source_order_layout.extend(fallback_evidence)
+        self.source_order_layout.extend(dict(method=l['method'],atom=a,lines=l['lines'],
+            page=l['page'],bbox=l['bbox']) for a,l in self.native_code.items())
         self.list_prefixes = {}
         self.crop_prompt_images = set()
         joins, rejected = supported_joins(index, decisions)
@@ -402,6 +420,8 @@ class Renderer:
         self.source_anchors = {}
         edited_atoms = {atom for atom, rows in self.corrections.items() if rows} | {atom for atom, rows in self.refs.items() if rows}
         self.recovered_figures = recover_fragmented_figures(index, registry, self.directory, edited_atoms)
+        from book_pipeline.publishing.figure_recovery import recover_native_vector_labels
+        self.recovered_figures.update(recover_native_vector_labels(index,self.directory,edited_atoms))
         self.image_rows = recover_horizontal_images(index, registry, self.directory, edited_atoms)
         self.image_row_members = {member for row in self.image_rows.values() for member in row['members']}
         self.image_row_groups = {group for row in self.image_rows.values() for group in row['groups']}
@@ -584,9 +604,10 @@ class Renderer:
                     or not previous <= start < end <= len(atom['content'])
                     or atom['content'][start:end] != run.get('quote')
                     or type(run.get('italic')) is not bool or type(run.get('bold')) is not bool
-                    or not (run['italic'] or run['bold'])
-                    or run.get('cjk_family') not in {None, 'sans'}
-                    or (run.get('cjk_family') and (not run['bold'] or run['italic']
+                    or not (run['italic'] or run['bold'] or run.get('cjk_family')=='calligraphic')
+                    or run.get('cjk_family') not in {None, 'sans', 'calligraphic'}
+                    or (run.get('cjk_family') and (run['italic']
+                        or (run['cjk_family']=='sans' and not run['bold'])
                         or not re.fullmatch(r'[\u3400-\u9fff]+', run['quote'])))):
                 raise ValueError('Invalid source text style range: ' + atom['id'])
             previous = end
@@ -596,6 +617,8 @@ class Renderer:
             switches = (r'\itshape' if run['italic'] else '') + (r'\bfseries' if run['bold'] else '')
             if run.get('cjk_family') == 'sans':
                 switches = r'\heiti'
+            elif run.get('cjk_family') == 'calligraphic':
+                switches = r'\BookSourceKaiFont' + (r'\bfseries' if run['bold'] else '')
             # An overlay split can start with a source space. Terminate the
             # font control word explicitly so TeX cannot eat that word boundary.
             terminator = '{}' if atom['content'][a:a+1].isspace() else ' '
@@ -737,6 +760,11 @@ class Renderer:
         if atom['id'] in self.figure_labels:
             return ''
         if atom["kind"] == "text":
+            if atom['id'] in self.native_code:
+                if lo!=0 or hi!=atom['length']:
+                    raise ValueError('Native code requires complete source ownership')
+                from book_pipeline.publishing.native_code import code_tex
+                return code_tex(self.native_code[atom['id']])
             return self.text_fragment(atom, lo, hi)
         content = atom["content"]
         changes = [(c['start_offset'], c['end_offset'], c['replacement']) for c in self.corrections[atom['id']]]
@@ -758,9 +786,18 @@ class Renderer:
             self.tex_compatibility.append(dict(atom=atom['id'],original=content,rendered=content,
                 evidence=['numbered equation in an inline source node rendered in display math; original equation number retained']))
         if atom["kind"] == "math" and not numbered_inline:
-            return "% source-atom: " + atom["id"] + "\n\\allowbreak{}$" + math_tex(content) + "$%\n% end-source-atom: " + atom["id"] + "\n"
+            literal = self.decisions.get('native_math_text', {}).get(atom['id'])
+            if literal:
+                return escape(literal['text'])
+            native = self.decisions.get('native_math_styles', {}).get(atom['id'])
+            if native:
+                content = native['latex']
+            style = r'\displaystyle ' if atom['group'] in getattr(self,'fraction_prose_groups',()) else ''
+            return "% source-atom: " + atom["id"] + "\n\\allowbreak{}$" + style + math_tex(content) + "$%\n% end-source-atom: " + atom["id"] + "\n"
         if atom["kind"] == "display_math" or numbered_inline:
             tex = math_tex(content)
+            from book_pipeline.publishing.prose_math import prose_math_parts
+            prose_parts = prose_math_parts(tex)
             tags = formula_tags(tex)
             image_reason = 'multiple equation tags' if len(tags) > 1 else None
             if len(re.findall(r'\\tag\*?\s*\{', tex)) != len(tags):
@@ -796,7 +833,19 @@ class Renderer:
                         evidence=['mathematical equation number wrapped in ensuremath; original number preserved']))
                 if tags:
                     tex = tex[:tags[0]['start']] + tex[tags[0]['end']:]
-                tex = "\\BookMath[" + ("48pt" if tag else "0pt") + "]{" + tex + "}" + tag
+                if prose_parts:
+                    tex = r'\BookProseMath{' + ''.join(
+                        escape(value, latin_quotes=True) if kind == 'text'
+                        else r'$\displaystyle ' + value + '$'
+                        for kind, value in prose_parts) + '}'
+                else:
+                    from book_pipeline.publishing.derivation_style import display_derivation_arrays
+                    styled, arrays = display_derivation_arrays(tex)
+                    if arrays:
+                        self.tex_compatibility.append(dict(atom=atom['id'], original=tex, rendered=styled,
+                            evidence=['single-column relation-led derivation rows retain display-sized fractions and operators; mathematical tokens and row breaks unchanged']))
+                        tex = styled
+                    tex = "\\BookMath[" + ("48pt" if tag else "0pt") + "]{" + tex + "}" + tag
             if display_row:
                 return "\n% source-atom: " + atom['id'] + "\n" + tex + "\n% end-source-atom: " + atom['id'] + "\n"
             return "\n% source-atom: " + atom["id"] + "\n\\begin{equation*}\n" + tex + "\n\\end{equation*}\n% end-source-atom: " + atom["id"] + "\n"
@@ -885,7 +934,83 @@ class Renderer:
         return ''.join(self.fragment(atom, lo, hi, False) for atom, lo, hi in parts)
 
     def wrapped_figure_tex(self, row):
+        if row['method']=='native_code_side_caption':
+            atom=self.index.atoms[self.index.ids[row['code']]]
+            layout=self.native_code[atom['id']]
+            rgb=','.join(f'{c:g}' for c in layout['panel'].get('background_color',[.95,.95,.95]))
+            panel=('\\definecolor{BookNativeCodeBack}{rgb}{'+rgb+'}\n'+
+                '\\begin{BookSourcePanel}[colback=BookNativeCodeBack,boxrule=0pt]{}{black}\n'+
+                self.source_marker(atom)+self.content_fragment(atom,0,atom['length'],True)+
+                '\\end{BookSourcePanel}\n')
+            caption=''.join(self.source_marker(a)+self.content_fragment(a,l,h,False)
+                for a,l,h in self.index.fragments(*row['caption_range']))
+            return ('\n\\begin{BookSideBySide}{'+f"{row['widths'][0]:.5f}"+'}{'+
+                f"{row['widths'][1]:.5f}"+'}{1}\n'+panel+
+                '\\BookSideSwitch\n\\footnotesize\\raggedright\\BookCaptionParagraph{'+caption+'}\n'+
+                '\\end{BookSideBySide}\n')
         """Ship the source figure beside one rejoined, immutable paragraph."""
+        if row['method']=='native_marginal_figure':
+            paragraphs=[''.join(self.fragment(a,l,h,False)
+                for a,l,h in self.index.fragments(*bounds)) for bounds in row['main_ranges']]
+            image=self.index.atoms[self.index.ids[row['image']]]
+            if image['id'] in self.recovered_figures:
+                image={**image,**self.recovered_figures[image['id']]}
+            picture=''.join(self.anchor(t) for t in row['targets'])+self.source_marker(image)
+            picture+='\\BookImage['+f"{row['image_width_fraction']:.5f}"+'\\linewidth]{'+self.asset(image)+'}\n'
+            caption=self.caption_tex(list(self.index.fragments(*row['caption_range'])))
+            return ('\n\\begingroup\\renewcommand{\\BookSideGap}{2pt}\n\\begin{BookSideBySide}{'+f"{row['widths'][0]:.5f}"+'}{'+
+                f"{row['widths'][1]:.5f}"+'}{'+('1' if row['main_left'] else '0')+'}\n'+paragraphs[0]+
+                '\n\\BookSideSwitch\n'+picture+'\\footnotesize\\BookCaptionParagraph{'+caption+'}\n'
+                '\\end{BookSideBySide}\n\\endgroup\n'+'\n\\par\n'.join(paragraphs[1:])+'\n\\par\n')
+        if row['method']=='native_ruled_table':
+            caption=('\\BookCaption{'+self.caption_tex(list(self.index.fragments(*row['caption_range'])))+'}\n'
+                     if row.get('caption_range') else '')
+            rows=[]
+            for cells in row['cells']:
+                rows.append(' & '.join('\\leavevmode '+''.join(self.fragment(a,l,h,False)
+                    for a,l,h in self.index.fragments(*cell)) for cell in cells)+r' \\')
+            spacing=2*(len(row['cells'][0])-1)
+            columns='@{}'+''.join(r'>{\raggedright\arraybackslash}p{'+f'{w:.5f}'+
+                r'\dimexpr\linewidth-'+str(spacing)+r'\tabcolsep\relax}' for w in row['column_widths'])+'@{}'
+            size=self.typography['body_size']*row.get('body_font_ratio',1)
+            setup='\\linespread{1}\\fontsize{'+f'{size:g}'+'pt}{'+f'{size*1.35:g}'+r'pt}\selectfont\renewcommand{\arraystretch}{1.15}'+'\n'
+            return ('\n\\par\\begin{samepage}\n'+setup+caption+
+                r'\noindent\begin{tabular}{'+columns+'}\n\\toprule\n'+
+                rows[0]+'\n\\midrule\n'+'\n'.join(rows[1:])+'\n\\bottomrule\n\\end{tabular}\n\\end{samepage}\n')
+        if row['method'] in {'native_marginal_glossary','native_small_font_side_note'}:
+            main=(self.wrapped_figure_tex(row['table']) if row.get('table') else
+                  ''.join(self.fragment(a,l,h,False) for a,l,h in self.index.fragments(*row['main_range'])))
+            notes=[]
+            for bounds,color in zip(row['note_ranges'],row['note_colors']):
+                # Math fragments contain TeX comments and must retain their
+                # newlines. Only source prose line endings are side-note breaks.
+                text=''.join(self.fragment(a,l,h,False).replace('\n',r'\\ ')
+                    if a['kind']=='text' else self.fragment(a,l,h,False)
+                    for a,l,h in self.index.fragments(*bounds))
+                if color is not None:
+                    text='{\\color[rgb]{'+','.join(f'{c:g}' for c in color)+'}'+text+'}'
+                notes.append(text)
+            note_top=('\\vspace*{'+f"{row['note_top_fraction']:.5f}"+
+                '\\dimexpr\\ht\\BookSideFirst+\\dp\\BookSideFirst\\relax}\n'
+                if row.get('note_top_fraction') else '')
+            compact=row['method']=='native_small_font_side_note'
+            return (('\n\\begingroup\\renewcommand{\\BookSideGap}{2pt}\n' if compact else '')+
+                '\n\\begin{BookSideBySide}{'+f"{row['widths'][0]:.5f}"+'}{'+
+                f"{row['widths'][1]:.5f}"+'}{'+('1' if row['main_left'] else '0')+'}\n'+main+
+                '\n\\BookSideSwitch\n\\scriptsize\\raggedright\\setlength{\\parindent}{0pt}\n'+
+                note_top+'\\par\\smallskip\\noindent '.join(notes)+'\n\\end{BookSideBySide}\n'+
+                ('\\endgroup\n' if compact else ''))
+        if row['method']=='native_lateral_caption':
+            image=self.index.atoms[self.index.ids[row['image']]]
+            if image['id'] in self.recovered_figures:
+                image={**image,**self.recovered_figures[image['id']]}
+            picture=''.join(self.anchor(t) for t in row['targets'])+self.source_marker(image)
+            picture+='\\BookImage[1\\linewidth]{'+self.asset(image)+'}\n'
+            caption=self.caption_tex(list(self.index.fragments(*row['caption_range'])))
+            return ('\n\\begin{BookSideBySide}{'+f"{row['widths'][0]:.5f}"+'}{'+
+                f"{row['widths'][1]:.5f}"+'}{'+('1' if row['image_left'] else '0')+'}\n'+
+                picture+'\n\\BookSideSwitch\n\\BookCaptionParagraph{'+caption+'}\n'
+                '\\end{BookSideBySide}\n')
         main = []
         for lo, hi in row['main_ranges']:
             main.append(''.join(self.fragment(a,l,h,False)
@@ -924,6 +1049,9 @@ class Renderer:
                        for a in captions)
 
     def render(self):
+        from book_pipeline.publishing.native_body_styles import native_minor_headings
+        minor_headings=native_minor_headings(self.index,self.registry,
+            {c['atom'] for c in self.decisions['corrections']})
         total = self.index.prefix[-1]
         positions = {0, total, *self.index.prefix}
         questions, answers = [], []
@@ -938,6 +1066,21 @@ class Renderer:
         for lo,hi in self.bold_spans:positions.update((lo,hi))
         starts, ends, anchored, skipped = defaultdict(list), defaultdict(list), defaultdict(list), []
         note_insertions = defaultdict(list)
+        from book_pipeline.publishing.native_tables import native_ruled_tables
+        from book_pipeline.publishing.native_lateral import native_side_notes
+        native_tables=native_ruled_tables(self.index,self.registry,self.decisions['exclusions'])
+        native_notes,relocated_notes=native_side_notes(self.index,native_tables,self.registry,
+            self.decisions['exclusions'],self.page_footnotes,
+            {c['atom'] for c in self.decisions['corrections']})
+        self.page_footnotes=[n for n in self.page_footnotes if n['id'] not in relocated_notes]
+        native_tables=[r for r in native_tables if not any(n.get('table') is r for n in native_notes)]
+        from book_pipeline.publishing.native_lateral import marginal_figures
+        native_figures=marginal_figures(self.index,self.registry,
+            [*self.decisions['exclusions'],*native_tables,*native_notes,*self.page_footnotes],
+            {c['atom'] for c in self.decisions['corrections']},
+            image_boxes={a:r['bbox'] for a,r in self.recovered_figures.items()})
+        skipped.extend((r['lo'],r['hi'],'native_table_or_note_unit')
+                       for r in [*native_tables,*native_notes,*native_figures])
         for note in self.page_footnotes:
             positions.update((note['lo'], note['hi'], note['insert_after']))
             skipped.append((note['lo'], note['hi'], 'page_footnote_rendered_separately'))
@@ -953,13 +1096,15 @@ class Renderer:
             caption_rows = split_caption_rows(self.index, self.registry, self.decisions['exclusions'],
                 {a for a in self.corrections if self.corrections[a]} | {a for a in self.refs if self.refs[a]})
             for row in caption_rows:
+                if any(r['lo']<=row['lo'] and row['hi']<=r['hi'] for r in native_figures):continue
                 skipped.append((row['lo'],row['hi'],'caption_moved_with_asset'))
                 associated_captions[self.index.prefix[self.index.ids[row['image']]]] = (row['lo'],row['hi'],'figure')
             self.source_order_layout.extend(caption_rows)
         for o in self.registry:
             anchored[o["lo"]].append(o)
             positions.add(o["lo"])
-            if self.config.get('float_assets') and o.get('caption_span') and o['kind'] in {'figure','table'}:
+            if (self.config.get('float_assets') and o.get('caption_span') and o['kind'] in {'figure','table'}
+                    and not any(r['lo']<=o['lo']<o['hi']<=r['hi'] for r in native_figures)):
                 a,b=o['caption_span'];positions.update((a,b))
                 skipped.append((a,b,'caption_moved_with_asset'))
                 associated_captions[o['lo']]=(a,b,o['kind'])
@@ -990,6 +1135,16 @@ class Renderer:
             positions.update((e["lo"], e["hi"]))
             skipped.append((e["lo"], e["hi"], "excluded_" + e["reason"]))
         from book_pipeline.publishing.mixed_notes import mixed_note_rows
+        from book_pipeline.publishing.native_lateral import marginal_references,side_caption_rows,marginal_glossaries
+        glossaries=marginal_glossaries(self.index,self.registry,
+            [dict(lo=a,hi=b) for a,b,_ in skipped],{c['atom'] for c in self.decisions['corrections']})
+        marginal_rows=marginal_references(self.index,self.registry,
+            [dict(lo=a,hi=b) for a,b,_ in skipped]+glossaries,{c['atom'] for c in self.decisions['corrections']})
+        marginal_ends=defaultdict(list)
+        for row in marginal_rows:
+            marginal_ends[row['attach_after']].append(row)
+            skipped.append((row['lo'],row['hi'],'native_marginal_reference'))
+        self.source_order_layout.extend(marginal_rows)
         mixed_notes = mixed_note_rows(self.index, self.registry,
             [dict(lo=a,hi=b) for a,b,_ in skipped] + self.side_note_rows,
             {c['atom'] for c in self.decisions['corrections']} | set(self.refs), self.directory)
@@ -998,6 +1153,15 @@ class Renderer:
             [dict(lo=a,hi=b) for a,b,_ in skipped] + self.page_footnotes + mixed_notes,
             {c['atom'] for c in self.decisions['corrections']}, self.side_note_rows)
         wrap_figures.extend(mixed_notes)
+        wrap_figures.extend(glossaries)
+        wrap_figures.extend(native_tables)
+        wrap_figures.extend(native_notes)
+        wrap_figures.extend(native_figures)
+        wrap_figures.extend(self.native_code_rows)
+        wrap_figures.extend(side_caption_rows(self.index,self.registry,
+            [dict(lo=a,hi=b) for a,b,_ in skipped]+wrap_figures,
+            {c['atom'] for c in self.decisions['corrections']},
+            image_boxes={a:r['bbox'] for a,r in self.recovered_figures.items()}))
         for row in wrap_joins:
             self.join_pairs.add((row['left'],row['right']))
             self.join_left.add(row['left']); self.join_right.add(row['right'])
@@ -1122,7 +1286,12 @@ class Renderer:
                                             self.index.atoms[i]['role'] in CAPTION_ROLES for i in indices)
                 long_table=any(self.index.atoms[i]['kind']=='table' and
                                '\\begin{longtable}' in (table_tex(self.index.atoms[i]['content'],False) or '') for i in assets)
-                if assets and only_assets_and_captions and not long_table:
+                # Searchable tables participate in the prose's argument. Keep
+                # their source position instead of letting later text overtake
+                # them at a page boundary. The existing unbreakable table body
+                # can still move intact to the next page.
+                if assets and only_assets_and_captions and not long_table and not any(
+                        self.index.atoms[i]['kind']=='table' for i in assets):
                     float_hi = group_hi
                     # Native extraction gives the figure and its caption
                     # separate source groups. A float must carry an adjacent,
@@ -1194,6 +1363,24 @@ class Renderer:
                     and not any(a < p < b for p in (*starts, *ends))
                     and not any(x < b and z > a for x, z, _ in skipped))
             if self.config.get('float_assets') and safe:
+                # A native multi-image row has the same caption ownership as
+                # a single image. Carry a separate, corroborated caption whole.
+                if stop < len(self.index.atoms):
+                    following=self.index.atoms[stop]
+                    caption_indices=group_atoms[following['group']]
+                    captions=[self.index.atoms[i] for i in caption_indices]
+                    box=following.get('block_bbox') or following.get('bbox')
+                    proposed_hi=self.index.prefix[max(caption_indices)+1]
+                    region=row['bbox']
+                    if (box and all(c['role'] in {'image_caption','chart_caption','image_footnote','chart_footnote'}
+                                    and c['page']==self.index.atoms[start]['page'] for c in captions)
+                            and -.01<=box[1]-region[3]<=.08
+                            and min(box[2],region[2])>max(box[0],region[0])
+                            and not any(a<p<proposed_hi for p in (*starts,*ends))
+                            and not any(x<proposed_hi and z>a for x,z,_ in skipped)):
+                        b=proposed_hi
+                        self.source_order_layout.append(dict(method='adjacent_source_caption_kept_with_image_row',
+                            group=self.index.atoms[start]['group'],caption_group=following['group'],lo=a,hi=b))
                 floating_groups[self.index.atoms[start]['group']] = (a, b, 'figure')
         # MinerU occasionally treats an exercise/question preceding a table as
         # its caption. A confirmed semantic object owns that paragraph's style.
@@ -1202,6 +1389,7 @@ class Renderer:
             if any(o["kind"] not in ("equation", "figure", "table") and a <= o["lo"] < b
                    for o in self.registry)}
         from book_pipeline.publishing.list_layout import list_paragraphs, multiline_list_rows
+        rule_region_changed = {c['atom'] for c in self.decisions['corrections']} | set(self.refs)
         list_styles = {group: style for group, style in list_paragraphs(self.index).items()
                        if not any(style['lo'] < p < style['hi'] for p in (*starts, *ends))
                        and not any(a < style['hi'] and b > style['lo'] for a,b,_ in skipped)}
@@ -1229,15 +1417,28 @@ class Renderer:
         self.source_order_layout.extend(multiline_rows)
         for style in list_styles.values():
             self.source_order_layout.append(dict(method='source_list_hanging_indent', **style))
-        from book_pipeline.publishing.display_layout import display_runs, prompt_space, list_display_scope, formula_image_prompts, bounded_display_units
+        from book_pipeline.publishing.display_layout import display_runs, prompt_space, list_display_scope, formula_image_prompts, bounded_display_units, colon_introductions, fraction_prose_rows, fraction_prose_units
         from book_pipeline.publishing.math_rows import horizontal_math_rows
         layout_barriers = {*starts, *ends, *(positions-set(self.index.prefix))}
+        intro_spaces = {p['lo']:p for p in colon_introductions(self.index,
+            layout_barriers | set(note_insertions), skipped)
+            if not any(c['atom'] in {a['id'] for a,_,_ in self.index.fragments(p['lo'],p['hi'])}
+                       for c in self.decisions['corrections'])}
+        self.source_order_layout.extend(intro_spaces.values())
         math_rows = horizontal_math_rows(self.index, self.decisions, layout_barriers | set(note_insertions), skipped)
         math_row_starts = {r['lo']:r for r in math_rows}
         math_row_members = {c['atom']:(r,c) for r in math_rows for c in r['cells']}
         math_skipped = [*skipped, *((r['lo'],r['hi'],'horizontal_math_row') for r in math_rows)]
         self.source_order_layout.extend(math_rows)
+        fraction_rows = fraction_prose_rows(self.index, layout_barriers | set(note_insertions), math_skipped)
+        fraction_starts = {r['lo'] for r in fraction_rows}
+        fraction_ends = {r['hi'] for r in fraction_rows}
+        self.fraction_prose_groups = {r['group'] for r in fraction_rows}
+        self.source_order_layout.extend(fraction_rows)
         units = bounded_display_units(self.index, layout_barriers | set(note_insertions), math_skipped)
+        units += fraction_prose_units(self.index, fraction_rows,
+            layout_barriers | set(note_insertions),
+            [*math_skipped,*((u['lo'],u['hi'],'existing_display_unit') for u in units)])
         unit_starts = {u['lo'] for u in units}
         unit_ends = {u['hi'] for u in units}
         self.source_order_layout.extend(units)
@@ -1268,10 +1469,27 @@ class Renderer:
                 self.source_order_layout.append(dict(method='source_prompt_kept_with_display',
                     group=style['group'], lo=style['lo'], hi=style['hi'], baselines=space))
         body_started = self.body_excerpt
+        from book_pipeline.publishing.native_rule_regions import native_rule_regions
+        rule_regions = native_rule_regions(self.index,self.registry,
+            [dict(lo=a,hi=b) for a,b,_ in skipped],
+            rule_region_changed)
+        rule_region_starts = {r['lo']:r for r in rule_regions}
+        rule_region_ends = {r['hi'] for r in rule_regions}
+        self.source_order_layout.extend(rule_regions)
         def close_float():
             nonlocal caption_open,floating_open,pending_reopen,last_atom
             if caption_open is not None:current.append('\\par\\endgroup\n');caption_open=None
             current.append('\n\\end{'+floating_open[2]+'}\n')
+            # A source-adjacent display must not overtake its preceding figure
+            # and leave that figure interrupting the following prose instead.
+            stop = bisect_right(self.index.prefix, floating_open[1])-1
+            if (floating_open[2] == 'figure' and 0 < stop < len(self.index.atoms)
+                    and self.index.prefix[stop] == floating_open[1]
+                    and self.index.atoms[stop]['kind'] == 'display_math'
+                    and self.index.atoms[stop-1]['page'] == self.index.atoms[stop]['page']):
+                current.append('\\FloatBarrier\n')
+                self.source_order_layout.append(dict(method='source_adjacent_figure_before_display',
+                    lo=floating_open[0],hi=floating_open[1],following=self.index.atoms[stop]['id']))
             floating_open=None;pending_reopen=bool(stack);last_atom=None
         def insert_notes(position):
             for note in note_insertions.pop(position, []):
@@ -1365,7 +1583,11 @@ class Renderer:
                     toc_title = re.sub(r'\\BookFootnoteReference\{([^{}]+)\}',
                                        lambda m: r'\textsuperscript{\BookFootnoteLabel{' + m[1] + '}}', toc_title)
                     toc_title = r'\texorpdfstring{'+toc_title+'}{'+bookmark_title(self.index,o['lo'],o['hi'])+'}'
-                    current.append("\n\\BookHeading{" + str(level) + "}{" + shown + "}{" + o["anchor"] + "}[" + markers + "][{" + toc_title + "}]\n")
+                    if o['anchor'] in minor_headings:
+                        current.append('\n\\BookMinorHeading{'+str(level)+'}{'+shown+'}{'+o['anchor']+'}{'+markers+'}{'+toc_title+'}\n')
+                        self.source_order_layout.append(minor_headings[o['anchor']])
+                    else:
+                        current.append("\n\\BookHeading{" + str(level) + "}{" + shown + "}{" + o["anchor"] + "}[" + markers + "][{" + toc_title + "}]\n")
                 else:
                     if o["kind"] == "footnote":
                         footnote_previous[o["anchor"]] = last_atom
@@ -1403,6 +1625,8 @@ class Renderer:
             math_cell = math_row_members.get(self.index.address(lo)['atom'])
             if lo in unit_starts:
                 current.append('\n\\begin{BookDisplayUnit}\n')
+            if lo in fraction_starts:
+                current.append('\n\\par\\addvspace{6pt}\\noindent\\begin{minipage}{\\linewidth}\\centering\n')
             if lo in math_row_starts:
                 current.append('\n\\par\\addvspace{6pt}\\noindent'
                                '\\begin{minipage}{\\linewidth}\\noindent%\n')
@@ -1426,6 +1650,13 @@ class Renderer:
                     last_atom = None
                 continue
             for atom, start, end in self.index.fragments(lo, hi):
+                if lo in rule_region_starts and start == 0:
+                    region = rule_region_starts[lo]
+                    rgb = ','.join(f'{c:g}' for c in region['color'])
+                    current.append('\n\\begin{BookSourceInset}{'+f"{region['left_fraction']:.5f}"+
+                        '}{'+f"{region['right_fraction']:.5f}"+'}{'+
+                        f"{region['thickness_pt']:g}"+'}{'+rgb+'}\n')
+                    last_atom = None
                 # Even a fully deleted text atom owns a source anchor and may
                 # close a list or another layout environment. Its empty text
                 # replacement must pass through the same boundary handling.
@@ -1445,6 +1676,14 @@ class Renderer:
                     current.append("\n" if display else "\n\n")
                 elif last_atom is not None and (last_atom["id"], atom["id"]) in join_pairs:
                     current.append("\n")
+                elif (last_atom is not None and last_atom['group']==atom['group']
+                        and last_atom['page']!=atom['page']
+                        and last_atom['kind']==atom['kind']=='text'
+                        and re.search(r'[A-Za-z0-9]$',last_atom['content'])
+                        and re.match(r'[A-Za-z0-9]',atom['content'])):
+                    # Saved cross-page units keep their original text atoms.
+                    # A page boundary between Latin words still needs a space.
+                    current.append('\n')
                 if (atom.get('block_type') == 'paragraph_title' and start == 0
                         and lo == group_limits[atom['group']][0]):
                     # A recognized object title can remain ordinary source
@@ -1452,6 +1691,12 @@ class Renderer:
                     # body lines below it, even without a semantic box.
                     current.append('\n\\par\\Needspace{4\\baselineskip}\n')
                 list_style = list_styles.get(atom['group'])
+                if lo in intro_spaces:
+                    current.append('\n\\par\\Needspace{4\\baselineskip}\n')
+                boundary=self.decisions.get('native_paragraph_starts',{}).get(atom['id'])
+                if boundary and start==0:
+                    current.append('\n\n')
+                    self.source_order_layout.append(dict(atom=atom['id'],**boundary))
                 if lo in multiline_keep:
                     current.append('\n\\par\\Needspace{'+str(multiline_keep[lo]['keep_baselines'])+
                                    '\\baselineskip}\\begin{samepage}\n')
@@ -1486,6 +1731,12 @@ class Renderer:
                     caption=self.caption_tex(list(self.index.fragments(cap[0],cap[1])))
                     current.append('\n\\BookCaption{'+caption+'}\n')
                 value = self.fragment(atom, start, end, bool(stack), display_row=bool(display_run or math_cell))
+                if end == atom['length'] and atom['id'] in self.native_ocr_punctuation:
+                    value += self.native_ocr_punctuation[atom['id']]['text']
+                if end==atom['length']:
+                    for note in marginal_ends.get(atom['id'],[]):
+                        value+='\\BookMarginText{'+self.caption_tex(list(
+                            self.index.fragments(note['lo'],note['hi'])))+'}'
                 geometry = geometric_captions.get(atom['id'])
                 if geometry:
                     value = (self.observed_captions_tex(geometry['before']) + value
@@ -1542,6 +1793,8 @@ class Renderer:
                         value += "\\par\\endgroup\n"
                         caption_open = None
                 current.append(value)
+                if hi in fraction_ends:
+                    current.append('\\par\\end{minipage}\\par\\addvspace{6pt}\n')
                 if math_cell and hi == math_cell[0]['hi']:
                     current.append('\\end{minipage}\\par\\addvspace{6pt}\n')
                 if hi in crop_prompt_ends:
@@ -1556,7 +1809,8 @@ class Renderer:
                             'bp}\\raisebox{'+f"{-scan_mark['depth_bp']:g}"+'bp}{'+glyph+'}\n')
                     else:
                         current.append('\\BookTerminalMark{'+glyph+'}\n')
-                    self.source_order_layout.append(scan_mark)
+                    if scan_mark not in self.source_order_layout:
+                        self.source_order_layout.append(scan_mark)
                 if hi in list_ends:
                     current.append('\\BookListEnd{}\n')
                 if hi in multiline_ends:
@@ -1577,6 +1831,9 @@ class Renderer:
                     current.append('\n\\BookSourceRule{' + f"{rule['thickness_pt']:g}" + '}{' + rgb + '}\n')
                     self.source_order_layout.append(rule)
                 last_atom = atom
+            if hi in rule_region_ends:
+                current.append('\n\\end{BookSourceInset}\n')
+                last_atom = None
         if floating_open:close_float()
         if caption_open is not None:
             current.append("\\par\\endgroup\n")
@@ -1631,6 +1888,13 @@ def write_project(index, decisions, registry, references, metadata, config, dire
     title, author = metadata.get("title") or "技术书籍", metadata.get("author") or ""
     typography = renderer.typography
     body = typography['body_size']
+    # Keep the established CJK leading and note geometry. Latin prose needs
+    # only the explicit 1.56 baseline, without the class's Chinese multiplier.
+    from book_pipeline.ingestion.translation import language
+    body_language = language(''.join(a['content'] for a in index.atoms
+        if a['kind']=='text' and a.get('role') not in {'header','footer','page_number'}))
+    body_spread = r'\linespread{1}' if body_language == 'en' else ''
+    from book_pipeline.publishing.native_code import font_commands
     preamble = "\n".join([
         # Matched note labels are paired explicitly with physical page records.
         # There is no automatic footnotemark to pair with footnotetext.
@@ -1644,12 +1908,14 @@ def write_project(index, decisions, registry, references, metadata, config, dire
         r"\newCJKfontfamily\BookCaptionFont[Path=fonts/,AutoFakeBold=2]{caption.ttf}",
         r"\newfontfamily\BookUnicodeFont[Path=fonts/,AutoFakeBold=2]{caption.ttf}",
         r"\newCJKfontfamily\BookExampleAnswerCJKFont[Scale=1]{FandolFang-Regular.otf}",
+        r"\newCJKfontfamily\BookSourceKaiFont[Scale=1,AutoFakeBold=2]{FandolKai-Regular.otf}",
+        font_commands(renderer.native_code),
         r"\usepackage{book-style}",
         color_definitions(validate_colors(config.get('block_colors', {}))),
         r'\colorlet{BookExampleInk}{BookColor' + validate_colors(config['block_colors'])['example'][1:] + '}' if config.get('block_colors', {}).get('example') else '',
         r'\renewcommand{\BookExampleQuestionFont}{\BookCaptionFont}',
         r'\renewcommand{\BookExampleAnswerFont}{\normalfont\rmfamily\BookExampleAnswerCJKFont}',
-        r'\AtBeginDocument{\fontsize{' + f'{body:g}' + 'pt}{' + f'{body * 1.56:g}' + r'pt}\selectfont}',
+        r'\AtBeginDocument{' + body_spread + r'\fontsize{' + f'{body:g}' + 'pt}{' + f'{body * 1.56:g}' + r'pt}\selectfont}',
         r'\renewcommand{\BookFootnoteFont}{\normalfont\BookCaptionFont\fontsize{' + f'{body*.8:g}' + 'pt}{' + f'{body*1.12:g}' + r'pt}\selectfont}',
         renderer.heading_layout.tex_setup(),
         r"\pdfstringdefDisableCommands{\def\hypertarget#1#2{#2}\def\BookHeadingGap{ }}",

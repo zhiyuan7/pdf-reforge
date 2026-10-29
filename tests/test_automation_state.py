@@ -69,6 +69,24 @@ class AutomationPublishTests(unittest.TestCase):
                 self.assertFalse(any(command[:2] in (['git', 'commit'], ['git', 'push'])
                                      for command in commands))
 
+    def test_test_timeout_saves_failure_context_without_publishing(self):
+        commands = []
+
+        def timed_run(command, **kwargs):
+            commands.append(command)
+            if command[0] == 'docker':
+                raise subprocess.TimeoutExpired(command, kwargs['timeout'])
+            return dict(exit_code=0, stdout=automation.BRANCH, stderr='')
+
+        receipt = self.root/'receipt'
+        with patch.object(automation, 'run', side_effect=timed_run):
+            result = automation.snapshot('2026-10-29', receipt)
+        self.assertEqual(result['tests']['exit_code'], 124)
+        self.assertIn('Regression checks failed', result['publish_error'])
+        self.assertEqual(json.loads((receipt/'context.json').read_text()), result)
+        self.assertFalse(any(c[:2] in (['git', 'add'], ['git', 'commit'], ['git', 'push'])
+                             for c in commands))
+
 
 class AutomationStateTests(unittest.TestCase):
     def setUp(self):
@@ -134,6 +152,20 @@ class AutomationStateTests(unittest.TestCase):
              patch.object(automation, 'codex') as worker:
             self.assertEqual(self.tick(), 0)
             worker.assert_not_called()
+
+    def test_daily_release_runs_while_background_ocr_is_preserved(self):
+        self.at(29, 23, 0)
+        automation.save(self.root/'state.json', dict(active_container='pdf-reforge-cpu-ocr'))
+        automation.save(self.root/'settings.json', dict(daily_recipient='me@example.test'))
+        with patch.object(automation, 'background_task_running', return_value=True) as background, \
+             patch.object(automation, 'snapshot', return_value=dict(date='2026-10-29')) as release, \
+             patch.object(automation, 'codex', return_value=0) as worker:
+            self.assertEqual(self.tick(), 0)
+            release.assert_called_once()
+            self.assertEqual(worker.call_args.args[0], 'daily')
+            background.assert_not_called()
+        self.assertEqual(self.state()['active_container'], 'pdf-reforge-cpu-ocr')
+        self.assertEqual(self.state()['daily_attempted'], '2026-10-29')
 
     def test_checks_outside_hour_do_not_start_work(self):
         with patch.object(automation, 'codex') as worker:

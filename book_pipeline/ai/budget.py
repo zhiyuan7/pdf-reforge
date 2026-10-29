@@ -56,6 +56,14 @@ class BudgetGuard:
         if not self.settings:
             return None
         amount = self.upper_bound(max_tokens)
+        return self.reserve_amount(task, amount, wait_for_inflight)
+
+    def reserve_amount(self, task, amount, wait_for_inflight=False):
+        """Reserve a known CNY amount for services billed in other units."""
+        if not self.settings:
+            return None
+        if isinstance(amount, bool) or not isinstance(amount, (int, float)) or not math.isfinite(amount) or amount < 0:
+            raise BudgetExceeded('预算保护：无效的费用上界')
         day = datetime.now(ZoneInfo('Asia/Shanghai')).date().isoformat()
         daily = min(self.settings['daily_cny'], float(os.environ.get('PDF_REFORGE_DAILY_BUDGET_CNY', self.settings['daily_cny'])))
         if not math.isfinite(daily) or daily <= 0:
@@ -108,5 +116,17 @@ class BudgetGuard:
                       + (usage['completion_tokens'] or 0)*rates['output']) / 1_000_000
             if pricing['currency'] == 'USD':
                 amount *= self.settings['usd_to_cny_ceiling']
+        self.settle_amount(token, amount)
+
+    def settle_amount(self, token, amount=None):
+        """Keep unknown requests reserved; settle confirmed non-token charges."""
+        if token is None:
+            return
+        if amount is None:
+            with self.transaction() as db:
+                db.execute("UPDATE charges SET state='unknown' WHERE id=?", (token,))
+            return
+        if isinstance(amount, bool) or not isinstance(amount, (int, float)) or not math.isfinite(amount) or amount < 0:
+            raise BudgetExceeded('预算保护：无效的结算费用')
         with self.transaction() as db:
             db.execute('UPDATE charges SET cny=?, state=? WHERE id=?', (amount, 'settled', token))

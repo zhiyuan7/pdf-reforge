@@ -68,9 +68,15 @@ def snapshot(day, directory, preview=False):
     result['changes'] = run(['git', 'status', '--short'])
     result['commits_today'] = run(['git', 'log', '--since='+day+'T00:00:00+08:00', '--format=%h %s'])
     # Tests are meaningful for logic changes; nightly results also gate commits.
-    result['tests'] = run(['docker','run','--rm','-v',str(ROOT/'tests')+':/app/tests:ro',
-                           '-v',str(ROOT/'book_pipeline')+':/app/book_pipeline:ro',
-                           'pdf-reforge:local','python','-m','unittest','discover','-s','tests','-q'], timeout=900)
+    try:
+        result['tests'] = run(['docker','run','--rm','-v',str(ROOT/'tests')+':/app/tests:ro',
+                               '-v',str(ROOT/'book_pipeline')+':/app/book_pipeline:ro',
+                               'pdf-reforge:local','timeout','--kill-after=30s','1800s',
+                               'python','-m','unittest','discover','-s','tests','-q'], timeout=1860)
+    except subprocess.TimeoutExpired:
+        # Recent CPU suites exceeded 15 minutes. A real timeout must still
+        # produce a durable failure context for the daily report.
+        result['tests'] = dict(exit_code=124, stdout='', stderr='Regression test container did not return within 1860 seconds')
     if preview:
         save(directory/'context.json', result)
         return result
@@ -184,7 +190,9 @@ def run_locked(args):
             save(STATE/'last-check.json', dict(checked_at=now.isoformat(), status='idle',
                                              reason='waiting_for_next_slot_or_slot_already_started'))
             return 0
-        if background_task_running(state):
+        # Release checks use temporary fixtures and must still run at 23:00
+        # while a resumable CPU conversion continues in its own output.
+        if mode == 'iterate' and background_task_running(state):
             save(STATE/'last-check.json', dict(checked_at=now.isoformat(), status='waiting',
                                              reason='background_task_running_or_completion_unconfirmed',
                                              active_container=state.get('active_container')))

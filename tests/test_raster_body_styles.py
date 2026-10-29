@@ -14,10 +14,62 @@ from book_pipeline.publishing.latex import Renderer
 from book_pipeline.publishing.raster_body_styles import (analyze_page, context_windows, enough_context, font_scores, is_bold, is_italic,
     anchored_word_span, bracket_ink, complete_line_box, literal_span, mixed_fragments, owned_ranges, prose_ink, recover_body_styles, supported_words, templates,
     scored_scan_word, scored_word, word_boxes, caption_candidates, anchored_captions, caption_line_contexts,
-    edge_prose_contexts, anchored_mixed_prose, competing_times_observations)
+    edge_prose_contexts, anchored_mixed_prose, competing_times_observations, numbered_prose_contexts)
 
 
 class RasterBodyStyleTests(unittest.TestCase):
+    def test_times_fallback_weight_distinguishes_scan_gain_from_bold_advances(self):
+        target = 'book_pipeline.publishing.scan_font_calibration.shape_scores'
+        for font in ('tiro','tibo','tiit','tibi'):
+            with pymupdf.open() as pdf:
+                page = pdf.new_page(width=180,height=45)
+                page.insert_text((10,30),'number',fontsize=13,fontname=font)
+                pix = page.get_pixmap(dpi=150,colorspace=pymupdf.csGRAY)
+                ink = 255-np.frombuffer(pix.samples,np.uint8).reshape(pix.height,pix.width)
+            ink = cv2.resize(ink,None,fx=2,fy=2,interpolation=cv2.INTER_LINEAR)
+            for gain in (0,.5,1):
+                gray = cv2.addWeighted(ink,1-gain,cv2.dilate(ink,np.ones((3,3),np.uint8)),gain,0)
+                rgb = cv2.cvtColor(255-gray,cv2.COLOR_GRAY2RGB)
+                # A legacy shape fit suggests bold for all four inputs. The
+                # source pixels, with natural advances, must decide weight.
+                italic = font in {'tiit','tibi'}
+                scores = dict(zip(('tiro','tibo','tiit','tibi'),
+                                  (.3,.4,.6,.95) if italic else (.3,.95,.3,.4)))
+                word = dict(text='number',score=.999,scores=scores,
+                            bbox=[0,0,rgb.shape[1],rgb.shape[0]])
+                with patch(target,return_value={'computer_modern':[.4]*4}):
+                    rows = competing_times_observations(rgb,[dict(text='number',words=[word])])
+                words = [w for row in rows for w in row['words']]
+                with self.subTest(font=font,gain=gain):
+                    if font in {'tiro','tiit'}:
+                        self.assertFalse(any(is_bold(w['scores']) for w in words))
+                    if italic:
+                        self.assertTrue(all(is_italic(w['scores']) for w in words))
+                    if font == 'tibo' and gain == 0:
+                        self.assertTrue(words)
+                        self.assertTrue(is_bold(words[0]['scores']))
+
+    def test_period_terminated_word_first_labels_require_exact_digits_and_ink(self):
+        word = dict(text='Proposition', score=.999, bbox=[10, 10, 40, 20],
+                    scores=dict(tiro=.3, tibo=.94, tiit=.3, tibi=.5))
+        for delimiter in ('.', ':'):
+            text = 'Proposition 3.12'+delimiter+' For every'
+            row = dict(text=text+' x we have', score=.999, words=[word])
+            group = [dict(atom='a', text=text, math=False),
+                     dict(atom='m', text='x', math=True),
+                     dict(atom='b', text=' we have', math=False)]
+            self.assertEqual(numbered_prose_contexts(row, group)[0]['source'], [0, 17])
+            for defect in ('digits', 'delimiter', 'weight', 'reading', 'line', 'word', 'decimal'):
+                altered=deepcopy(row)
+                if defect=='digits':altered['text']=altered['text'].replace('3.12', '3.13')
+                if defect=='delimiter':altered['text']=altered['text'].replace(delimiter, ';', 1)
+                if defect=='weight':altered['words'][0]['scores']=dict(tiro=.94,tibo=.3,tiit=.3,tibi=.3)
+                if defect=='reading':altered['words'][0]['text']='Property'
+                if defect=='line':altered['score']=.98
+                if defect=='word':altered['words'][0]['score']=.98
+                if defect=='decimal':altered['text']=altered['text'].replace('3.12'+delimiter, '3.12.4')
+                self.assertEqual(numbered_prose_contexts(altered, group), [], defect)
+
     def test_competing_family_can_veto_but_never_grant_times_emphasis(self):
         rgb=np.full((100,100,3),255,np.uint8)
         obs=self.observation()

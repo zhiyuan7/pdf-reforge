@@ -45,6 +45,7 @@
   },
   "input_mode": "auto",
   "translation": "auto",
+  "translation_service": {"provider": "deepseek"},
   "publication_scope": "book",
   "budget": {
     "per_call_cny": 8.0,

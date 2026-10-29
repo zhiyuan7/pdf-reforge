@@ -103,12 +103,25 @@ class TableProseTests(unittest.TestCase):
             root=Path(name);pdf,origin=fixture(root)
             (root/'output').mkdir()
             origin=origin.rename(root/'output'/'ocr')
+            # Discovery now requires a signed export rather than mineru_version
+            # alone. Keep this integration fixture eligible under that policy.
+            from mineru_checkpoint import export_signature, export_hashes
+            config=load_config()
+            versions={'mineru_version':'test','docvortex_version':'test'}
+            signature=export_signature(digest(pdf),[1],config['mineru_tier'],
+                config['mineru_ocr_mode'],config['mineru_model_source'],versions)
+            save(origin/'manifest.json', {**read(origin/'manifest.json'),
+                **{k:v for k,v in signature.items() if k!='method'},
+                'export_signature':signature,
+                'export_hashes':{**export_hashes(origin),'table.png':digest(origin/'table.png')}})
             from book_pipeline.application.pipeline import prepare_book_source
             with patch('book_pipeline.application.pipeline.ROOT',root), \
+                 patch('book_pipeline.ingestion.ocr_cache.runtime_versions',return_value=versions), \
+                 patch('book_pipeline.ingestion.native.prepare_source',side_effect=AssertionError('unexpected extraction')), \
                  patch('book_pipeline.ingestion.table_prose.recover_table_prose',return_value=origin) as review, \
                  patch('book_pipeline.ingestion.formula_bands.correct_formula_bands',return_value=dict(records=[])), \
                  patch('book_pipeline.ingestion.translation.translate_source',return_value=origin):
-                self.assertEqual(prepare_book_source(pdf,None,load_config(),root/'result'),origin)
+                self.assertEqual(prepare_book_source(pdf,None,config,root/'result'),origin)
                 self.assertEqual(review.call_args.args[1],origin)
 
     def test_horizontal_formula_review_does_not_cross_vertical_prose_columns(self):

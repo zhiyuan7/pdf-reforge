@@ -66,22 +66,20 @@ def prepare_book_source(pdf, source_directory, config, output, progress=lambda *
     if source_directory is None and not (output / 'source' / 'manifest.json').exists():
         # Retain cross-job reuse of validated legacy OCR for identical uploads.
         # Never select translated/corrected sources under a different policy.
-        sha = digest(pdf)
-        for path in (ROOT / 'output').rglob('manifest.json'):
-            try:
-                manifest = read(path)
-                if (manifest.get('mineru_version') and manifest.get('input_sha256') == sha
-                        and not manifest.get('translation') and not manifest.get('corrected_source_sha256')
-                        and not manifest.get('table_prose_recovery')):
-                    load_source(pdf, path.parent, 'all')
-                    source_directory = path.parent
-                    break
-            except (OSError, ValueError, KeyError):
-                continue
+        from book_pipeline.ingestion.ocr_cache import find_ocr_cache
+        import pymupdf
+        with pymupdf.open(pdf) as document:
+            pages = list(range(1,len(document)+1))
+        source_directory = find_ocr_cache(pdf,ROOT/'output',config,pages)
     if source_directory is None:
         # Preserve old resumable MinerU runs when present.
         legacy = output / 'mineru'
         if (legacy / 'manifest.json').is_file():
+            from book_pipeline.ingestion.ocr_cache import validate_ocr_cache
+            import pymupdf
+            with pymupdf.open(pdf) as document:
+                pages = list(range(1,len(document)+1))
+            validate_ocr_cache(pdf, legacy, config, pages)
             load_source(pdf, legacy, 'all')
             source_directory = legacy
         else:
