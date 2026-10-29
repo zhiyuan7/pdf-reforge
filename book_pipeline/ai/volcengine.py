@@ -121,8 +121,21 @@ def normalize_written_numbers(source, translated):
     with Chinese digits, keeping the existing ban on invented numeric literals.
     Existing numeric/formula placeholders cannot be changed by this operation.
     """
-    known = Counter(value for m in _WRITTEN_NUMBER.finditer(source)
-                    if (value := written_number(m[0])) is not None)
+    known = Counter()
+    for match in _WRITTEN_NUMBER.finditer(source):
+        words=re.sub(r'-',' ',match[0].casefold()).split()
+        while words:
+            if words[0]=='and':
+                words=words[1:]
+                continue
+            for stop in range(len(words),0,-1):
+                value=written_number(' '.join(words[:stop]))
+                if value is not None:
+                    known[value]+=1
+                    words=words[stop:]
+                    break
+            else:
+                words=words[1:]
     decades=dict(zip('twenties thirties forties fifties sixties seventies eighties nineties'.split(),range(20,100,10)))
     known.update(decades[m[0].casefold()] for m in re.finditer(r'\b(?:'+'|'.join(decades)+r')\b',source,re.I))
     def replace(match):
@@ -242,14 +255,21 @@ class VolcengineTranslationClient:
             raise DecisionUncertain('火山译文没有可安全分离的保护内容')
         pattern=re.compile('('+'|'.join(re.escape(t) for t in literals)+')')
         parts=[]
-        for part in pattern.split(text):
+        source_parts=pattern.split(text)
+        for number,part in enumerate(source_parts):
             if part in protected or part in visible_terms or not re.search(r'[A-Za-z]',part):
                 parts.append(part)
                 continue
             leading=part[:len(part)-len(part.lstrip())]
             trailing=part[len(part.rstrip()):]
             prose=part.strip()
-            translated=' '.join(self._request([piece])[0] for piece in chunks(prose))
+            if (number==len(source_parts)-1 and number>0
+                    and source_parts[number-1] in protected and prose in {'times?','times.'}):
+                # A terminal count after a preserved number/symbol is a
+                # repetition suffix, not a standalone query to MT.
+                translated='次'+{'?':'？','.':'。'}[prose[-1]]
+            else:
+                translated=' '.join(self._request([piece])[0] for piece in chunks(prose))
             parts.append(leading+normalize_written_numbers(prose,translated)+trailing)
         result=''.join(parts)
         save(self.cache/'integrity_fallbacks'/(fingerprint(dict(item=item,text=text))+'.json'),

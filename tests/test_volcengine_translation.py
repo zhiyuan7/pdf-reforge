@@ -170,6 +170,20 @@ class VolcengineTests(unittest.TestCase):
         self.assertEqual(normalize_written_numbers('twenty-five years','ZXQREF000025QXZ ⟪KEEP_25⟫ 2.5'),'ZXQREF000025QXZ ⟪KEEP_25⟫ 2.5')
         self.assertEqual(normalize_written_numbers('the eighties and early nineties','80年代和90年代初'),'八十年代和九十年代初')
         self.assertEqual(normalize_written_numbers('the nineties','80年代和90年代'),'80年代和九十年代')
+        self.assertEqual(normalize_written_numbers('between zero and one','在0和1之间'),'在零和一之间')
+        self.assertEqual(normalize_written_numbers('twenty-five and six','25和6'),'二十五和六')
+        self.assertEqual(normalize_written_numbers('one hundred and two and three','102和3'),'一百零二和三')
+
+    def test_terminal_repeat_count_suffix_does_not_become_an_unrelated_number(self):
+        calls=[]
+        def response(body):
+            calls.extend(body['TextList'])
+            return dict(TranslationList=[dict(Translation=text if 'ZXQREF' in text else '重复')
+                                         for text in body['TextList']])
+        client=self.client('repeat-suffix',transport=response)
+        result=Translator(client).translate([dict(id='a',text='How often do we repeat $K$ times?')])['a']
+        self.assertIn('$K$ 次？',result)
+        self.assertNotIn('times?',calls[1:])
 
     def test_pdf_wraps_join_before_translation_but_blank_paragraphs_survive(self):
         text='More regions than\nthere are atoms.\n\nA high-\ndimensional input.'
