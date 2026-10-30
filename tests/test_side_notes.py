@@ -12,10 +12,58 @@ from book_pipeline.ingestion.panels import panel_environments, text_panels
 from book_pipeline.ingestion.source import SourceIndex
 from book_pipeline.publishing.compiler import compile_project
 from book_pipeline.publishing.latex import write_project
-from book_pipeline.publishing.side_notes import side_note_rows
+from book_pipeline.publishing.side_notes import side_note_rows, explicit_side_note_rows
 
 
 class SideNoteTests(unittest.TestCase):
+    def explicit_source(self, left=False):
+        body='A complete paragraph explains the probability model and its mathematical consequences. '*3
+        specs=[('body',body,'text',[.25,.2,.8,.3] if left else [.1,.2,.65,.3]),
+               ('following','The following paragraph retains the ordinary reading order.','text',[.1,.35,.8,.4]),
+               ('aside','Appendix C.5.1: KL divergence','aside_text',
+                [.08,.24,.22,.28] if left else [.69,.24,.83,.28])]
+        atoms=[dict(id=i,group=i,page=0,kind='text',role=r,block_type=r,content=t,
+                    length=len(t),bbox=b,extraction_method='ocr') for i,t,r,b in specs]
+        return SourceIndex(dict(atoms=atoms,source_page_count=1))
+
+    def test_explicit_ocr_aside_needs_unique_disjoint_owner_and_preserves_source(self):
+        for defect in ('none','ambiguous','inside','different_page','distant','heading','unclassified','edited','excluded','semantic'):
+            with self.subTest(defect=defect):
+                index=self.explicit_source();changed=[];exclusions=[];registry=[]
+                if defect=='ambiguous':
+                    index=SourceIndex(dict(atoms=[dict(index.atoms[0],id='other',group='other'),*index.atoms]))
+                note=index.atoms[index.ids['aside']]
+                if defect=='inside':note['bbox']=[.3,.24,.44,.28]
+                if defect=='different_page':note['page']=1
+                if defect=='distant':note['bbox']=[.69,.6,.83,.64]
+                if defect=='heading':index.atoms[index.ids['body']]['role']='paragraph_title'
+                if defect=='unclassified':note['role']='text'
+                if defect=='edited':changed=['aside']
+                if defect=='excluded':exclusions=[dict(lo=0,hi=1)]
+                if defect=='semantic':registry=[dict(lo=0,hi=1,kind='theorem')]
+                before=deepcopy(index.source)
+                self.assertEqual(len(explicit_side_note_rows(index,registry,exclusions,changed)),int(defect=='none'))
+                self.assertEqual(index.source,before)
+
+    def test_compiled_nonadjacent_aside_keeps_owner_and_destinations_on_both_sides(self):
+        for left in (False,True):
+            with self.subTest(left=left),tempfile.TemporaryDirectory() as name:
+                index=self.explicit_source(left);root=Path(name)
+                audit=write_project(index,dict(corrections=[],joins=[],exclusions=[],bold_spans=[]),
+                    [],[],dict(title='Explicit side note',author=''),load_config(),root,sample_mode=True)
+                self.assertTrue(audit['coverage_complete'])
+                result=compile_project(root,{t:executable(t) for t in ('xelatex','latexmk')})
+                self.assertTrue(result['success'],result['log_tail']);self.assertEqual(result['warnings'],[])
+                with pymupdf.open(root/'main.pdf') as pdf:
+                    names=pdf.resolve_names();self.assertEqual(names['source-aside']['page'],names['source-body']['page'])
+                    page=pdf[names['source-body']['page']]
+                    main=page.search_for('A complete paragraph')[0];note=page.search_for('Appendix')[0]
+                    self.assertEqual(main.x0>note.x0,left)
+                    self.assertLess(abs(main.y0-note.y0),12)
+                    self.assertEqual(page.get_text().count('Appendix'),1)
+                    self.assertGreater(page.search_for('The following')[0].y0,
+                                       max(r.y1 for r in page.search_for('consequences.')))
+
     def source(self, note_first=False, note_left=False):
         main_box, note_box = ([.54,.20,.94,.36], [.06,.20,.49,.34]) if note_left else ([.06,.20,.49,.36], [.54,.20,.94,.34])
         panel = dict(id='p1-panel-1',bbox=note_box,color=[.25]*3,

@@ -166,7 +166,7 @@ def bookmark_title(index,lo,hi):
             text=re.sub(r'\\([A-Za-z]+)',lambda m:symbols.get(m[1],m[1]),text)
             text=re.sub(r'\\[!,;: ]',' ',text).replace('{','').replace('}','')
         values.append(text)
-    text=''.join(values)
+    text=re.sub(r'\s+',' ',''.join(values)).strip()
     return ''.join(ESCAPES.get(c,c) for c in text)
 
 
@@ -741,6 +741,12 @@ class Renderer:
             return prefix + "\\hypertarget{" + name + "}{}"
         return ""
 
+    def heading_fragment(self, atom, lo, hi):
+        value=self.content_fragment(atom,lo,hi,False)
+        # Heading macro arguments cannot contain paragraph tokens. Collapse
+        # source prose wraps only; inline math's TeX comment newlines must stay.
+        return re.sub(r'[\r\n]+',' ',value) if atom['kind']=='text' else value
+
     def content_fragment(self, atom, lo, hi, in_box, display_row=False):
         if atom['id'] in self.image_rows:
             row = self.image_rows[atom['id']]
@@ -782,10 +788,18 @@ class Renderer:
                 self.tex_compatibility.append({'atom':atom['id'],'original':content,'rendered':compatible,'evidence':evidence})
             content=compatible
         numbered_inline = atom['kind']=='math' and bool(formula_tags(content))
+        from book_pipeline.publishing.prose_math import prose_math_parts
+        prose_inline=(atom['kind']=='math' and not numbered_inline
+            and atom['id'] not in self.decisions.get('native_math_text',{})
+            and atom['id'] not in self.decisions.get('native_math_styles',{})
+            and prose_math_parts(content) is not None)
+        if prose_inline:
+            issue=dict(reason='long_prose_inside_inline_math_requires_source_review',atom=atom['id'])
+            if issue not in self.issues:self.issues.append(issue)
         if numbered_inline:
             self.tex_compatibility.append(dict(atom=atom['id'],original=content,rendered=content,
                 evidence=['numbered equation in an inline source node rendered in display math; original equation number retained']))
-        if atom["kind"] == "math" and not numbered_inline:
+        if atom["kind"] == "math" and not numbered_inline and not prose_inline:
             literal = self.decisions.get('native_math_text', {}).get(atom['id'])
             if literal:
                 return escape(literal['text'])
@@ -794,7 +808,7 @@ class Renderer:
                 content = native['latex']
             style = r'\displaystyle ' if atom['group'] in getattr(self,'fraction_prose_groups',()) else ''
             return "% source-atom: " + atom["id"] + "\n\\allowbreak{}$" + style + math_tex(content) + "$%\n% end-source-atom: " + atom["id"] + "\n"
-        if atom["kind"] == "display_math" or numbered_inline:
+        if atom["kind"] == "display_math" or numbered_inline or prose_inline:
             tex = math_tex(content)
             from book_pipeline.publishing.prose_math import prose_math_parts
             prose_parts = prose_math_parts(tex)
@@ -934,6 +948,19 @@ class Renderer:
         return ''.join(self.fragment(atom, lo, hi, False) for atom, lo, hi in parts)
 
     def wrapped_figure_tex(self, row):
+        if row['method']=='explicit_algorithm_source_lines':
+            parts=[]
+            for atom,lo,hi in self.index.fragments(row['lo'],row['hi']):
+                value=self.fragment(atom,lo,hi,True)
+                if atom['kind']=='text':
+                    # Inline math fragments own TeX comment newlines. Only
+                    # source text newlines and indentation become code lines.
+                    value=re.sub(r'\n([ \t]*)',lambda m:'\n\\par\\noindent{}'+
+                        ('\\hspace*{'+f'{len(m[1].expandtabs(4))*.45:g}'+'em}' if m[1] else ''),value)
+                parts.append(value)
+            return ('\n\\begin{BookSourcePanel}[fontupper=\\small]{}{black}\n'
+                    '\\raggedright\\setlength{\\parindent}{0pt}\\setlength{\\parskip}{2pt}\\noindent\n'+
+                    ''.join(parts)+'\n\\par\\end{BookSourcePanel}\n')
         if row['method']=='native_code_side_caption':
             atom=self.index.atoms[self.index.ids[row['code']]]
             layout=self.native_code[atom['id']]
@@ -977,7 +1004,7 @@ class Renderer:
             return ('\n\\par\\begin{samepage}\n'+setup+caption+
                 r'\noindent\begin{tabular}{'+columns+'}\n\\toprule\n'+
                 rows[0]+'\n\\midrule\n'+'\n'.join(rows[1:])+'\n\\bottomrule\n\\end{tabular}\n\\end{samepage}\n')
-        if row['method'] in {'native_marginal_glossary','native_small_font_side_note'}:
+        if row['method'] in {'native_marginal_glossary','native_small_font_side_note','explicit_geometric_side_note'}:
             main=(self.wrapped_figure_tex(row['table']) if row.get('table') else
                   ''.join(self.fragment(a,l,h,False) for a,l,h in self.index.fragments(*row['main_range'])))
             notes=[]
@@ -1007,10 +1034,20 @@ class Renderer:
             picture=''.join(self.anchor(t) for t in row['targets'])+self.source_marker(image)
             picture+='\\BookImage[1\\linewidth]{'+self.asset(image)+'}\n'
             caption=self.caption_tex(list(self.index.fragments(*row['caption_range'])))
-            return ('\n\\begin{BookSideBySide}{'+f"{row['widths'][0]:.5f}"+'}{'+
+            before,after='',''
+            if self.config.get('float_assets'):
+                # This complete image/caption pair owns one float, just like
+                # a vertically stacked source figure. A fixed minipage after
+                # deferred floats otherwise reserves space before those floats
+                # are scheduled and can intrude into the footer.
+                before='\\begin{figure}[htp]\n\\centering\n'
+                after='\\end{figure}\n'
+                self.source_order_layout.append(dict(method='deferred_lateral_figure_float',
+                    lo=row['lo'],hi=row['hi'],page=row['page']))
+            return ('\n'+before+'\\begin{BookSideBySide}{'+f"{row['widths'][0]:.5f}"+'}{'+
                 f"{row['widths'][1]:.5f}"+'}{'+('1' if row['image_left'] else '0')+'}\n'+
                 picture+'\n\\BookSideSwitch\n\\BookCaptionParagraph{'+caption+'}\n'
-                '\\end{BookSideBySide}\n')
+                '\\end{BookSideBySide}\n'+after)
         main = []
         for lo, hi in row['main_ranges']:
             main.append(''.join(self.fragment(a,l,h,False)
@@ -1074,13 +1111,19 @@ class Renderer:
             {c['atom'] for c in self.decisions['corrections']})
         self.page_footnotes=[n for n in self.page_footnotes if n['id'] not in relocated_notes]
         native_tables=[r for r in native_tables if not any(n.get('table') is r for n in native_notes)]
+        from book_pipeline.publishing.side_notes import explicit_side_note_rows
+        explicit_notes=explicit_side_note_rows(self.index,self.registry,
+            [*self.decisions['exclusions'],*native_tables,*native_notes,*self.page_footnotes],
+            {c['atom'] for c in self.decisions['corrections']})
+        for row in explicit_notes:
+            skipped.extend((lo,hi,'explicit_aside_rendered_beside_owner') for lo,hi in row['note_ranges'])
         from book_pipeline.publishing.native_lateral import marginal_figures
         native_figures=marginal_figures(self.index,self.registry,
-            [*self.decisions['exclusions'],*native_tables,*native_notes,*self.page_footnotes],
+            [*self.decisions['exclusions'],*native_tables,*native_notes,*explicit_notes,*self.page_footnotes],
             {c['atom'] for c in self.decisions['corrections']},
             image_boxes={a:r['bbox'] for a,r in self.recovered_figures.items()})
         skipped.extend((r['lo'],r['hi'],'native_table_or_note_unit')
-                       for r in [*native_tables,*native_notes,*native_figures])
+                       for r in [*native_tables,*native_notes,*explicit_notes,*native_figures])
         for note in self.page_footnotes:
             positions.update((note['lo'], note['hi'], note['insert_after']))
             skipped.append((note['lo'], note['hi'], 'page_footnote_rendered_separately'))
@@ -1156,8 +1199,13 @@ class Renderer:
         wrap_figures.extend(glossaries)
         wrap_figures.extend(native_tables)
         wrap_figures.extend(native_notes)
+        wrap_figures.extend(explicit_notes)
         wrap_figures.extend(native_figures)
         wrap_figures.extend(self.native_code_rows)
+        from book_pipeline.publishing.algorithm_lines import algorithm_line_rows
+        wrap_figures.extend(algorithm_line_rows(self.index,self.registry,
+            [dict(lo=a,hi=b) for a,b,_ in skipped]+wrap_figures,
+            {c['atom'] for c in self.decisions['corrections']},self.native_code))
         wrap_figures.extend(side_caption_rows(self.index,self.registry,
             [dict(lo=a,hi=b) for a,b,_ in skipped]+wrap_figures,
             {c['atom'] for c in self.decisions['corrections']},
@@ -1559,7 +1607,7 @@ class Renderer:
                     # Rule/review titles never replace the actual source text.
                     if any(a["kind"] not in ("text", "math") for a, _, _ in self.index.fragments(o["lo"], o["hi"])):
                         raise ValueError("Heading contains a display formula/image/table")
-                    shown = "".join(self.content_fragment(a, l, h, False) for a, l, h in self.index.fragments(o["lo"], o["hi"]))
+                    shown = "".join(self.heading_fragment(a, l, h) for a, l, h in self.index.fragments(o["lo"], o["hi"]))
                     label = self.heading_layout.label_span(self.index.text(o['lo'], o['hi']))
                     if label:
                         prefix_end, body_start = (o['lo'] + offset for offset in label)
@@ -1570,8 +1618,8 @@ class Renderer:
                         except ValueError:
                             pass
                         else:
-                            prefix = ''.join(self.content_fragment(a,l,h,False) for a,l,h in self.index.fragments(o['lo'],prefix_end))
-                            body = ''.join(self.content_fragment(a,l,h,False) for a,l,h in self.index.fragments(body_start,o['hi']))
+                            prefix = ''.join(self.heading_fragment(a,l,h) for a,l,h in self.index.fragments(o['lo'],prefix_end))
+                            body = ''.join(self.heading_fragment(a,l,h) for a,l,h in self.index.fragments(body_start,o['hi']))
                             shown = prefix + r'\BookHeadingGap{}' + body
                     # Claim the anchor here; heading macro inserts it at the correct location.
                     self.anchors.append(o["anchor"])

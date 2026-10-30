@@ -143,6 +143,67 @@ class VolcengineTests(unittest.TestCase):
         self.assertEqual(translator.translate([dict(id='a',text='12 Transformers 207')])['a'],
                          '12 Transformer模型（transformers） 207')
 
+    def test_whole_ocr_spaced_url_is_preserved_locally_without_translating_its_path(self):
+        def forbidden(body):raise AssertionError('A bare URL must not reach MT')
+        url='https : / / github . com / daviddao/awful-ai'
+        translator=Translator(self.client('spaced-url',transport=forbidden))
+        self.assertEqual(translator.translate([dict(id='a',text=url)])['a'],url)
+        # Prose surrounding a URL still requires translation.
+        translator=Translator(self.client('url-prose'))
+        translator.translate([dict(id='a',text='Read https : / / example . org / intro for details.')])
+        self.assertEqual(len(self.calls),1)
+
+    def test_partially_protected_wrapped_urls_preserve_paths_without_requests(self):
+        def forbidden(body):raise AssertionError('A wrapped URL must not reach MT')
+        translator=Translator(self.client('wrapped-urls',transport=forbidden), {'attention':'注意力'})
+        for url in ('https://example.org/reports/generative- ai- is-cool-but-keep-its-costs',
+                    'https: / / www . example . org / article / a33xb4 / a - long-path-with-91-accuracy',
+                    'https : / / example . org / attention / intro-to-the-next-step',
+                    'https://example.org/a-\nb-c-and-d-e-f'):
+            with self.subTest(url=url):
+                self.assertEqual(translator.translate([dict(id='a',text=url)])['a'], url)
+        # URL-looking prose with ordinary word spaces must still be translated.
+        translator=Translator(self.client('wrapped-url-prose'))
+        for text in ('https://example.org/intro explains how to learn.',
+                     'Read https://example.org/intro for the next steps.'):
+            translator.translate([dict(id='a',text=text)])
+        self.assertEqual(len(self.calls),2)
+
+    def test_bibliographic_author_fragments_survive_latin_name_mutation(self):
+        source='Smith, C., Jones, W., Ghasemipour, S. K. S., Ayan,'
+        def mutated(body):
+            return dict(TranslationList=[dict(Translation=t.replace('Ghasemipour','Ghasemple'))
+                                         for t in body['TextList']])
+        client=self.client('names',transport=mutated)
+        self.assertEqual(Translator(client).translate([dict(id='a',text=source)])['a'],source)
+        self.assertEqual(Translator(client).translate([dict(id='a',text=source)])['a'],source)
+        self.assertEqual(client.ledger.summary()['requests'],1)
+        self.assertEqual(client.ledger.summary()['cache_hits'],1)
+        # A reference containing a paper title remains translatable prose.
+        translator=Translator(self.client('name-title'))
+        translator.translate([dict(id='a',text='Smith, C. (2020). This paper proposes a new network.')])
+        self.assertEqual(len(self.calls),1)
+
+    def test_bare_unicode_math_variables_and_symbols_never_reach_mt(self):
+        source='Consider a normal variable ϵ with mean 0 and variance I; parameters ϕ0 and θ11, x ∈ ℝ and matrix Ω•.'
+        seen=[]
+        def corrupt(body):
+            seen.extend(body['TextList'])
+            return dict(TranslationList=[dict(Translation='中文 '+t.replace('ϵ','π').replace('ϕ','😍').replace('∈','😍'))
+                                         for t in body['TextList']])
+        output=Translator(self.client('unicode-math',transport=corrupt)).translate([dict(id='a',text=source)])['a']
+        for value in ('ϵ','ϕ0','θ11','∈','ℝ','Ω•'):
+            self.assertIn(value,output)
+            self.assertNotIn(value,seen[0])
+        self.assertNotIn('😍',output)
+        self.assertEqual(protect('α̂ β′ 𝛟2 ∂ Ω•')[1],['α̂','β′','𝛟2','∂','Ω•'])
+
+    def test_new_unicode_math_literals_outside_placeholders_are_rejected(self):
+        for symbol in ('π','😍'):
+            def invented(body):return dict(TranslationList=[dict(Translation='中文 '+t+' '+symbol) for t in body['TextList']])
+            with self.subTest(symbol=symbol),self.assertRaises(DecisionUncertain):
+                Translator(self.client('invented-unicode-'+symbol,transport=invented)).translate([dict(id='a',text='Use variable ϵ.')])
+
     def test_math_heavy_unchanged_prose_is_retranslated_without_sending_formulas(self):
         calls=[]
         def response(body):
@@ -165,16 +226,34 @@ class VolcengineTests(unittest.TestCase):
         result=translator.translate([dict(id='a',text=text)])['a']
         for value in values:self.assertIn(value,result)
         masked,values=protect('1More properly, this is a footnote. x2 2t item_12 H2O')
-        self.assertEqual(values,['1'])
+        self.assertEqual(values,['1','x2','2t','item_12','H2O'])
         self.assertTrue(masked.startswith('⟪KEEP_0⟫More'))
-        self.assertEqual(protect('the 1980s and 2020s; x2 2t H2O')[1],['1980s','2020s'])
-        self.assertEqual(protect('Smith (2020a), 2nd Edition; x2 2t H2O')[1],['2020a','2nd'])
+        self.assertEqual(protect('the 1980s and 2020s; x2 2t H2O')[1],['1980s','2020s','x2','2t','H2O'])
+        self.assertEqual(protect('Smith (2020a), 2nd Edition; x2 2t H2O')[1],['2020a','2nd','x2','2t','H2O'])
         self.assertEqual(protect('1ensures positive weights.',role='page_footnote')[1],['1'])
         self.assertEqual(protect('1BERT predicts labels.',role='page_footnote')[1],['1'])
         def note(body):return dict(TranslationList=[dict(Translation='ZXQREF000000QXZ确保正权重。')])
         result=Translator(self.client('note-marker',transport=note)).translate([
             dict(id='a',text='1ensures positive weights.',role='page_footnote')])['a']
         self.assertEqual(protect(result)[1],['1'])
+
+    def test_unmarked_math_identifiers_are_kept_out_of_machine_translation(self):
+        calls=[]
+        def response(body):
+            calls.extend(body['TextList'])
+            return dict(TranslationList=[dict(Translation=text.replace('Apply', '应用').replace('to', '于'))
+                                         for text in body['TextList']])
+        source='Apply $g$ to h2, h1, 2t, H2O and item_12.'
+        translator=Translator(self.client('bare-identifiers',transport=response))
+        result=translator.translate([dict(id='a',text=source)])['a']
+        for literal in ('$g$','h2','h1','2t','H2O','item_12'):
+            self.assertEqual(result.count(literal),1)
+            self.assertNotIn(literal,calls[0])
+        # A digit copied beside a correct token is still an integrity failure.
+        def leaked(body):
+            return dict(TranslationList=[dict(Translation='应用 ZXQREF000000QXZ 和 1。')])
+        with self.assertRaises(DecisionUncertain):
+            Translator(self.client('identifier-leak',transport=leaked)).translate([dict(id='a',text='Apply h1.')])
 
     def test_written_number_normalization_requires_exact_source_value_and_count(self):
         self.assertEqual(normalize_written_numbers('twenty-five years','工作25年。'),'工作二十五年。')
@@ -228,6 +307,23 @@ class VolcengineTests(unittest.TestCase):
             else:
                 with self.assertRaises(DecisionUncertain):translator.translate([dict(id='a',text='Working twenty-five years.')])
 
+    def test_plural_numeral_nouns_do_not_spend_another_clauses_number_allowance(self):
+        source='The identity matrix has ones on the diagonal, and its determinant is one.'
+        self.assertEqual(normalize_written_numbers(source,'对角线上有1，行列式是1。'),
+                         '对角线上有一，行列式是一。')
+        self.assertEqual(normalize_written_numbers(source,'1，1，1。'),'一，一，1。')
+        self.assertEqual(normalize_written_numbers('Zeros, zeroes, twos and sixes.','0、0、2、6。'),
+                         '零、零、二、六。')
+        self.assertEqual(normalize_written_numbers('Someone zeros the matrix.','1。'),'1。')
+        for output,passes in [('对角线上有1，行列式是1。',True),('对角线上有1，行列式是2。',False)]:
+            def response(body):return dict(TranslationList=[dict(Translation=output)])
+            translator=Translator(self.client('plural-numbers-'+str(passes),transport=response))
+            if passes:
+                self.assertEqual(translator.translate([dict(id='a',text=source)])['a'],
+                                 '对角线上有一，行列式是一。')
+            else:
+                with self.assertRaises(DecisionUncertain):translator.translate([dict(id='a',text=source)])
+
     def test_month_names_allow_only_source_attested_numeric_months(self):
         self.assertEqual(normalize_written_numbers('December release','12月发布。'),'十二月发布。')
         self.assertEqual(normalize_written_numbers('February release','2月发布，3月修订。'),'二月发布，3月修订。')
@@ -240,6 +336,21 @@ class VolcengineTests(unittest.TestCase):
             if passes:self.assertEqual(translator.translate([dict(id='a',text='December release.')])['a'],'十二月发布。')
             else:
                 with self.assertRaises(DecisionUncertain):translator.translate([dict(id='a',text='December release.')])
+
+    def test_bibliographic_month_abbreviations_keep_exact_value_and_occurrence_count(self):
+        self.assertEqual(normalize_written_numbers('Sep. and Sept releases','9月和9月；9月。'),
+                         '九月和九月；9月。')
+        self.assertEqual(normalize_written_numbers('Jan Feb Mar Apr May Jun Jul Aug Sep Oct Nov Dec',
+            '1月2月3月4月5月6月7月8月9月10月11月12月'),
+            '一月二月三月四月五月六月七月八月九月十月十一月十二月')
+        for output,passes in [('研究所，9月ZXQREF000000QXZ。',True),('研究所，8月ZXQREF000000QXZ。',False)]:
+            def response(body):return dict(TranslationList=[dict(Translation=output)])
+            translator=Translator(self.client('short-month-'+str(passes),transport=response))
+            if passes:
+                self.assertEqual(translator.translate([dict(id='a',text='Institute, Sept 4.')])['a'],
+                                 '研究所，九月4。')
+            else:
+                with self.assertRaises(DecisionUncertain):translator.translate([dict(id='a',text='Institute, Sept 4.')])
 
     def test_request_groups_respect_sixteen_items_and_five_thousand_characters(self):
         items = [dict(id=str(i),text='A long paragraph about learning. '*90) for i in range(20)]

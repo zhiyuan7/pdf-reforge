@@ -11,7 +11,7 @@ import re
 from book_pipeline.ingestion.panels import intersection_fraction
 from book_pipeline.publishing.native_body_styles import matched_group_ranges
 
-METHOD='complete_native_monospaced_panel_v4'
+METHOD='complete_native_monospaced_panel_v5'
 
 
 def mono(name):
@@ -20,6 +20,35 @@ def mono(name):
 
 def key(text):
     return ''.join(text.split())
+
+
+def searchable_code_crop(page, live, directory, atom):
+    """Keep verified code ink when its PDF font cannot be embedded in TeX."""
+    import pymupdf
+    from book_pipeline.publishing.image_search import searchable_raster
+    # Search text comes from the same identity-checked live glyphs. Do not
+    # substitute a visible font or reconstruct indentation from flattened text.
+    for span in live:
+        font=pymupdf.Font('china-s' if re.search(r'[\u3400-\u9fff]',span['text']) else 'helv')
+        if any(not font.has_glyph(ord(c)) for c in span['text'] if not c.isspace()):
+            return None
+    clip=pymupdf.Rect(min(s['bbox'][0] for s in live)*page.rect.width,
+        min(s['bbox'][1] for s in live)*page.rect.height,
+        max(s['bbox'][2] for s in live)*page.rect.width,
+        max(s['bbox'][3] for s in live)*page.rect.height)
+    clip=(clip+(-.5,-.5,.5,.5)) & page.rect
+    pix=page.get_pixmap(matrix=pymupdf.Matrix(3,3),clip=clip,alpha=False)
+    target=directory/'images'/('native-code-'+hashlib.sha256(atom['id'].encode()).hexdigest()[:24])
+    target.parent.mkdir(parents=True,exist_ok=True)
+    png=target.with_suffix('.png');pdf=target.with_suffix('.pdf');pix.save(png)
+    rows=[dict(text=s['text'],bbox=[v*d*3-o for v,d,o in zip(s['bbox'],
+        [page.rect.width,page.rect.height]*2,[pix.x,pix.y]*2)]) for s in live]
+    searchable_raster(png,pdf,rows)
+    size=sorted(s['size'] for s in live)[len(live)//2]
+    return dict(method='verified_native_code_searchable_crop_v1',atom=atom['id'],page=atom['page']+1,
+        bbox=atom['bbox'],lines=len({round(s['origin'][1],1) for s in live}),spans=[],
+        asset=str(pdf.relative_to(directory)),width=pix.width/3*8.5/size,height=pix.height/3*8.5/size,
+        panel=atom['source_panel'])
 
 
 def recover_native_code(index,directory,changed=(),*,identify_only=False):
@@ -110,15 +139,19 @@ def recover_native_code(index,directory,changed=(),*,identify_only=False):
                 if any(ord(c) not in saved['cmap'] for c in s['text'] if not c.isspace()):break
                 owned.append(dict(text=s['text'],x=s['origin'][0],y=s['origin'][1],
                     size=s['size'],color=s['color'],font=saved['file'],command=saved['command']))
-            if len(owned)!=len(live):continue
-            x0=min(s['bbox'][0]*page.rect.width for s in live)
-            y0=min(s['bbox'][1]*page.rect.height for s in live)
-            width=max(s['bbox'][2]*page.rect.width for s in live)-x0
-            height=max(s['bbox'][3]*page.rect.height for s in live)-y0
-            layout=dict(method=METHOD,atom=atom['id'],page=atom['page']+1,
-                bbox=box,x0=x0,y0=y0,width=width,height=height,spans=owned,
-                lines=len({round(s['y'],1) for s in owned}),panel=atom['source_panel'])
-            layouts[atom['id']]=layout
+            if len(owned)!=len(live):
+                fallback=searchable_code_crop(page,live,directory,atom)
+                if fallback is None:continue
+                layouts[atom['id']]=fallback
+            else:
+                x0=min(s['bbox'][0]*page.rect.width for s in live)
+                y0=min(s['bbox'][1]*page.rect.height for s in live)
+                width=max(s['bbox'][2]*page.rect.width for s in live)-x0
+                height=max(s['bbox'][3]*page.rect.height for s in live)-y0
+                layout=dict(method=METHOD,atom=atom['id'],page=atom['page']+1,
+                    bbox=box,x0=x0,y0=y0,width=width,height=height,spans=owned,
+                    lines=len({round(s['y'],1) for s in owned}),panel=atom['source_panel'])
+                layouts[atom['id']]=layout
             if pos+1==len(groups):continue
             _,caption,caption_positions=groups[pos+1]
             if (not caption or any(a.get('extraction_method')!='native' or a['page']!=atom['page']
@@ -160,6 +193,10 @@ def font_commands(layouts):
 
 def code_tex(layout):
     from book_pipeline.publishing.latex import ESCAPES
+    if layout.get('asset'):
+        return ('\n\\par\\noindent\\begin{adjustbox}{max width=\\linewidth}\n'
+                '\\includegraphics[width='+f"{layout['width']:.4f}"+'pt]{'+layout['asset']+'}'
+                '\n\\end{adjustbox}\\par\n')
     # Embedded fonts retain the actual code characters, including Unicode
     # identifiers; they must not become mathematical TeX substitutions.
     literal=lambda t:''.join(r'\char"20{}' if c==' ' else ESCAPES.get(c,c) for c in t)

@@ -218,7 +218,7 @@ class AutoIngestionTests(unittest.TestCase):
         output=translator.translate([dict(id='a',text=source)])['a']
         self.assertEqual(Counter(protect(output)[1]),Counter(protect(source)[1]))
         self.assertEqual(protect('图6.2中有12次试验')[1],['6.2','12'])
-        self.assertEqual(protect('x2 2t item_12 H2O')[1],[])
+        self.assertEqual(protect('x2 2t item_12 H2O')[1],['x2','2t','item_12','H2O'])
         for damaged in (output.replace('12','13'),output+'另有12次',output.replace('6.2','')):
             self.assertNotEqual(Counter(protect(damaged)[1]),Counter(protect(source)[1]))
 

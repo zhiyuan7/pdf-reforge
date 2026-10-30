@@ -30,10 +30,16 @@ class ProseMathTests(unittest.TestCase):
                                  for kind, value in parts), content)
 
     def test_explanation_wraps_at_body_size_with_all_tokens_and_destinations(self):
+        self.check_explanation('display_math')
+
+    def test_long_prose_in_inline_math_wraps_without_losing_content_or_anchors(self):
+        self.check_explanation('math')
+
+    def check_explanation(self,kind):
         content = (r'\lim_{h\to0}=\text{“limit as }h\text{ goes to zero”}='
                    r'\text{the process that starts with a sequence of numbers }'
                    r'\Delta q/\Delta t\text{ and produces the instantaneous rate }dq/dt.')
-        rows = [('text', 'Before the explanation.'), ('display_math', content),
+        rows = [('text', 'Before the explanation.'), (kind, content),
                 ('display_math', r'x=y'), ('text', 'After the explanation.')]
         atoms = [dict(id=f'a{n}',group=f'g{n}',page=0,kind=kind,
                       role='text' if kind == 'text' else 'equation',

@@ -164,17 +164,26 @@
 % Short adjacent prose/note pairs retain both source ownership and lateral order.
 \newsavebox{\BookSideFirst}
 \newsavebox{\BookSideSecond}
+\newsavebox{\BookSidePair}
 \newdimen\BookSideWidth
+\newdimen\BookSideHeight
 \newcommand{\BookSideGap}{10pt}
 \newenvironment{BookSideBySide}[3]{\par\addvspace{\BookSideGap}\begingroup
   \edef\BookSideIndent{\the\parindent}\BookSideWidth=\linewidth
   \def\BookSideSecondWidth{#2}\def\BookSideFirstLeft{#3}
   \begin{lrbox}{\BookSideFirst}\begin{minipage}[t]{#1\BookSideWidth}
   \setlength{\parindent}{\BookSideIndent}\vspace{0pt}}
- {\par\end{minipage}\end{lrbox}\noindent
-  \ifnum\BookSideFirstLeft=1
+ {\par\end{minipage}\end{lrbox}%
+  % Top-aligned minipages carry most of their extent as depth. Reserve the
+  % complete pair before shipping it, so page depth limits cannot hide it.
+  \sbox{\BookSidePair}{\makebox[\BookSideWidth][s]{\ifnum\BookSideFirstLeft=1
     \usebox{\BookSideFirst}\hfill\usebox{\BookSideSecond}%
-  \else\usebox{\BookSideSecond}\hfill\usebox{\BookSideFirst}\fi
+  \else\usebox{\BookSideSecond}\hfill\usebox{\BookSideFirst}\fi}}%
+  \BookSideHeight=\dimexpr\ht\BookSidePair+\dp\BookSidePair\relax
+  \ifinner\else\Needspace{\dimexpr\BookSideHeight+\BookSideGap\relax}\fi\noindent
+  % Pending top floats are scheduled after Needspace. Expose the full extent
+  % as height too, rather than letting TeX cap the deep box at maxdepth.
+  \raisebox{\dp\BookSidePair}[\BookSideHeight][0pt]{\usebox{\BookSidePair}}%
   \par\prevdepth=-1000pt\vskip\BookSideGap\endgroup}
 \newcommand{\BookSideSwitch}{\par\end{minipage}\end{lrbox}%
   \begin{lrbox}{\BookSideSecond}\begin{minipage}[t]{\BookSideSecondWidth\BookSideWidth}

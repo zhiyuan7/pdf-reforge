@@ -235,5 +235,27 @@ class NativeLateralTests(unittest.TestCase):
                     self.assertEqual(image.x0<caption.x0,image_left)
                     self.assertEqual(''.join(p.get_text() for p in doc).count('Notebook'),1)
 
+    def test_lateral_figure_keeps_source_order_after_pending_tall_floats(self):
+        with tempfile.TemporaryDirectory() as name:
+            root=Path(name);index=self.source(root)
+            earlier=[dict(index.atoms[3],id='earlier'+str(n),group='earlier'+str(n),
+                bbox=[.1,.02+n*.08,.9,.06+n*.08]) for n in range(2)]
+            index=SourceIndex({**index.source,'atoms':[*earlier,*index.atoms]})
+            audit=write_project(index,dict(corrections=[],joins=[],exclusions=[],bold_spans=[]),
+                [],[],dict(title='Figure order',author=''),{**load_config(),'float_assets':True},
+                root/'latex',sample_mode=True)
+            self.assertTrue(audit['coverage_complete'])
+            result=compile_project(root/'latex',{t:executable(t) for t in ('xelatex','latexmk')})
+            self.assertTrue(result['success'],result['log_tail']);self.assertEqual(result['warnings'],[])
+            with pymupdf.open(root/'latex/main.pdf') as doc:
+                names=doc.resolve_names()
+                prior=[names['source-'+a['id']]['page'] for a in earlier]
+                pair=names['source-image']['page']
+                self.assertGreater(pair,max(prior))
+                self.assertEqual(names['source-caption']['page'],pair)
+                self.assertEqual(names['source-tail']['page'],pair)
+                caption=doc[pair].search_for('and a complete caption.')[0]
+                self.assertLess(caption.y1,doc[pair].rect.height-50)
+
 
 if __name__=='__main__':unittest.main()

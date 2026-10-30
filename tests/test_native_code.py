@@ -94,10 +94,34 @@ class NativeCodeTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as name:
             root=Path(name);index=self.source(root)
             with patch.object(pymupdf.Page,'get_fonts',return_value=[]):
-                self.assertFalse(recover_native_code(index,root/'fonts')[0])
+                fallback,_=recover_native_code(index,root/'fonts')
                 layouts,_=recover_native_code(index,root/'identity',identify_only=True)
+            self.assertEqual(fallback['0']['method'],'verified_native_code_searchable_crop_v1')
+            self.assertTrue((root/'fonts'/fallback['0']['asset']).is_file())
             self.assertTrue(layouts['0']['identity_verified'])
             self.assertFalse((root/'identity/fonts').exists())
+
+    def test_unembeddable_font_keeps_original_ink_search_indentation_and_caption(self):
+        with tempfile.TemporaryDirectory() as name:
+            root=Path(name);index=self.source(root);before=deepcopy(index.source)
+            with patch.object(pymupdf.Page,'get_fonts',return_value=[]):
+                audit=write_project(index,dict(corrections=[],joins=[],exclusions=[],bold_spans=[]),
+                    [],[],dict(title='Fallback code',author=''),load_config(),root/'latex',sample_mode=True)
+            self.assertEqual(index.source,before)
+            self.assertTrue(audit['coverage_complete'])
+            self.assertTrue(any(r['method']=='verified_native_code_searchable_crop_v1'
+                                for r in audit['source_order_layout']))
+            result=compile_project(root/'latex',{t:executable(t) for t in ('xelatex','latexmk')})
+            self.assertTrue(result['success'],result['log_tail']);self.assertEqual(result['warnings'],[])
+            with pymupdf.open(root/'latex/main.pdf') as pdf:
+                self.assertEqual(len(pdf),1)
+                page=pdf[0];start=page.search_for('def')[0];ret=page.search_for('return')[0]
+                self.assertEqual(page.get_text().count('def solve'),1)
+                self.assertIn('π',page.get_text())
+                self.assertGreater(ret.x0,start.x0+8)
+                self.assertGreater(ret.y0,start.y0+20)
+                self.assertGreater(page.search_for('Algorithm 4.')[0].x0,ret.x1)
+                self.assertTrue(page.get_images())
 
     def test_compiled_code_keeps_searchable_unicode_indentation_colors_and_side_caption(self):
         with tempfile.TemporaryDirectory() as name:

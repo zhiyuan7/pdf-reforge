@@ -7,6 +7,24 @@ from book_pipeline.structure.section_review import split_source
 from book_pipeline.structure.footnotes import extract_marker,marker_occurrences,classify_footnotes
 
 class FootnoteMarkerTests(unittest.TestCase):
+    def test_explicit_rewritten_native_callout_does_not_require_original_prose_identity(self):
+        from unittest.mock import patch
+        atoms=[dict(id='body',group='body',page=0,kind='text',role='text',block_type='text',
+                    content='已审校正文：^{1}',length=len('已审校正文：^{1}'),extraction_method='native'),
+               dict(id='note',group='note',page=0,kind='text',role='page_footnote',block_type='page_footnote',
+                    content='^{1} 审校注释',length=len('^{1} 审校注释'))]
+        index=SourceIndex(dict(source_pdf='',input_sha256='fixture',mineru_sha256='fixture',source_page_count=1,atoms=atoms))
+        # The source still has raised ink, but its English text differs from
+        # this explicit editorial callout. Plain translated digits must fail.
+        def observed(index,atom,marker,start=None,end=None):return start is None
+        with patch('book_pipeline.structure.footnotes.native_raised_marker',side_effect=observed):
+            note=classify_footnotes(index,split_source(index,dict(headings=[])))['footnotes']['items'][0]
+            self.assertEqual(note['status'],'matched')
+            atoms[0]['content']='已审校正文：1';atoms[0]['length']=len(atoms[0]['content'])
+            plain=SourceIndex(index.source)
+            note=classify_footnotes(plain,split_source(plain,dict(headings=[])))['footnotes']['items'][0]
+            self.assertEqual(note['status'],'unmatched')
+
     def test_native_joined_numeric_note_label_and_exact_raised_callout(self):
         for defect in ('none','flat_callout','flat_note_label','scan'):
             with self.subTest(defect=defect),tempfile.TemporaryDirectory() as name:

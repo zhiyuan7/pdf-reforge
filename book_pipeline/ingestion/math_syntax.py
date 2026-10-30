@@ -17,6 +17,9 @@ def compatible_equation_tag(tag):
 def math_compatibility(text):
     """Preserve formula tokens while making simple OCR arrays valid TeX."""
     changes=[]
+    if re.search(r'[\f\v]',text):
+        text=re.sub(r'[\f\v]',' ',text)
+        changes.append('source form-feed/vertical-tab whitespace normalized to spaces inside math; mathematical tokens unchanged')
     def operator_alias(match):
         changes.append('nonstandard OCR operator rendered with operatorname; original operator spelling preserved')
         return r'\operatorname{' + match[1] + '}'
@@ -65,6 +68,28 @@ def math_compatibility(text):
             changes.append(f'array declares {columns} columns but source rows contain {max_cells} cells; extended column layout without changing cells')
         return r'\begin{array}{'+spec+'}'+body+r'\end{array}'
     text=re.sub(r'\\begin\{array\}\{(?P<spec>[clr\s]+)\}(?P<body>.*?)\\end\{array\}',array,text,flags=re.S)
+    # Some extractors return aligned rows without their enclosing environment.
+    # Require balanced top-level cells and row breaks, leaving nested arrays,
+    # literal ampersands and incomplete syntax for explicit source review.
+    if not re.search(r'\\(?:begin|end)\b|(?<!\\)%',text):
+        tail=re.search(r'(\s*(?:\\tag\*?\{[^{}]*\}\s*)+)$',text)
+        body=text[:tail.start()] if tail else text
+        suffix=text[tail.start():] if tail else ''
+        depth,i,cells=0,0,0;rows=[];valid=True
+        while i<len(body):
+            if body[i]=='\\':
+                if i+1<len(body) and body[i+1]=='\\' and depth==0:
+                    rows.append(cells);cells=0
+                i+=2;continue
+            if body[i]=='{':depth+=1
+            elif body[i]=='}':
+                depth-=1
+                if depth<0:valid=False
+            elif body[i]=='&' and depth==0:cells+=1
+            i+=1
+        if rows and valid and depth==0 and all(n>0 for n in [*rows,cells]) and '\\tag' not in body:
+            text=r'\begin{aligned}'+body+r'\end{aligned}'+suffix
+            changes.append('bare top-level alignment rows enclosed in aligned; all cells, row breaks and equation tags preserved')
     return text,changes
 
 

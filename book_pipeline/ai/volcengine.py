@@ -24,7 +24,7 @@ from book_pipeline.config import fingerprint, load_environment, read, save
 HOST = 'translate.volcengineapi.com'
 QUERY = 'Action=TranslateText&Version=2020-06-01'
 URL = 'https://' + HOST + '/?' + QUERY
-METHOD = 'volcengine_translate_text_v6'
+METHOD = 'volcengine_translate_text_v7'
 # Raw service responses remain reusable when local validation improves.
 REQUEST_METHOD = 'volcengine_translate_text_v2'
 PRICE_PER_MILLION = 49
@@ -138,6 +138,13 @@ def normalize_written_numbers(source, translated):
                 words=words[1:]
     decades=dict(zip('twenties thirties forties fifties sixties seventies eighties nineties'.split(),range(20,100,10)))
     known.update(decades[m[0].casefold()] for m in re.finditer(r'\b(?:'+'|'.join(decades)+r')\b',source,re.I))
+    # Matrix prose uses "zeros" and "ones" as numeral nouns. Each
+    # source-attested occurrence permits that same value once, just like
+    # singular "zero" and "one"; it must not consume another clause's one.
+    plurals={word+('es' if word.endswith('x') else 's'):value for word,value in _SMALL.items()}
+    plurals['zeroes']=0
+    known.update(plurals[m[0].casefold()] for m in re.finditer(
+        r'\b(?:'+'|'.join(plurals)+r')\b',source,re.I))
     # A scalar attached to a standard unit is not a free-standing numeral in
     # the original protector (unlike variables such as 2t). MT may spell its
     # unit out; only its exact source value/count can become Chinese digits.
@@ -157,6 +164,8 @@ def normalize_written_numbers(source, translated):
     # source-attested month and occurrence count; other new digits still fail.
     months = {name:number for number,name in enumerate(
         'January February March April May June July August September October November December'.split(),1)}
+    months.update({name[:3]:number for name,number in list(months.items())})
+    months['Sept']=9
     known_months = Counter(months[m[0]] for m in re.finditer(
         r'\b(?:'+'|'.join(months)+r')\b', source))
     def month(match):
@@ -362,8 +371,13 @@ class VolcengineTranslationClient:
         if task != 'translate-book-zh' or images:
             raise ValueError('Volcengine client supports text translation only')
         output, terms, prepared, pending = [], {}, [], []
+        from book_pipeline.ingestion.translation import author_names_only, is_url_only
         for item in payload['items']:
             text = item['text']
+            original = text
+            for token, value in item.get('protected_values', {}).items():
+                original = original.replace(token, value)
+            url_only = is_url_only(original)
             if 'ZXQREF' in text:
                 raise DecisionUncertain('原文与翻译保护标记冲突')
             protected = {}
@@ -372,10 +386,11 @@ class VolcengineTranslationClient:
                 protected[token] = value
                 return token
             text = re.sub(r'⟪KEEP_\d+⟫', lambda m: opaque(m[0]), text)
-            text=normalize_prose_wraps(text)
+            if not url_only:
+                text=normalize_prose_wraps(text)
             glossary = payload.get('glossary', {})
             visible_terms = {}
-            if glossary:
+            if glossary and not url_only:
                 alternatives = '|'.join(re.escape(t) for t in sorted(glossary, key=len, reverse=True))
                 pattern = re.compile(r'(?<!\w)(?:' + alternatives + r')(?!\w)', re.I)
                 lookup = {term.casefold():term for term in glossary}
@@ -393,6 +408,12 @@ class VolcengineTranslationClient:
             remainder=re.sub(r'ZXQREF\d{6}QXZ','',text)
             for value in visible_terms:remainder=remainder.replace(value,'')
             needs_translation=bool(re.search(r'[A-Za-z]',remainder))
+            # OCR can leave spaces around URL punctuation. A whole URL is an
+            # immutable identifier, not prose for MT to rewrite. Remove only
+            # punctuation-adjacent whitespace for recognition; return the
+            # original text, and never swallow surrounding explanatory prose.
+            if url_only:
+                needs_translation=False
             pending.extend((piece,needs_translation) for piece in pieces)
         translated, group = [], []
         for piece,needs_translation in pending:
@@ -426,9 +447,14 @@ class VolcengineTranslationClient:
             expected_terms=Counter({text:len(names) for text,names in visible_terms.items()})
             original=item['text']
             for token,value in item.get('protected_values',{}).items():original=original.replace(token,value)
-            from book_pipeline.ingestion.translation import author_names_only
+            # Bibliographic names are immutable identifiers. Keep the original
+            # even when MT rewrites a surname into another Latin spelling.
+            # Retain request batching so verified raw responses remain reusable.
+            if author_names_only(original):
+                result=prepared_text
             untranslated=(bool(protected or visible_terms) and not re.search(r'[\u3400-\u9fff]',result)
-                          and len(re.findall(r'[A-Za-z]+',item['text']))>4 and not author_names_only(original))
+                          and len(re.findall(r'[A-Za-z]+',item['text']))>4
+                          and not author_names_only(original) and not is_url_only(original))
             segmented=False
             if (Counter(re.findall(r'ZXQREF\d{6}QXZ', result)) != Counter(protected.keys())
                     or (pattern and Counter(m[0] for m in pattern.finditer(result)) != expected_terms)

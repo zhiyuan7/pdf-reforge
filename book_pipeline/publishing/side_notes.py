@@ -3,6 +3,63 @@ from collections import OrderedDict
 from pathlib import Path
 
 
+def explicit_side_note_rows(index, registry=(), exclusions=(), changed=()):
+    """Attach explicitly classified asides to a unique disjoint paragraph.
+
+    OCR often emits all asides after the main column. Source geometry, rather
+    than that serialization order or English glyph identity, owns the note;
+    this also preserves the relationship after translation.
+    """
+    from book_pipeline.publishing.native_lateral import native_groups
+    groups = native_groups(index, allow_ocr=True)
+    def available(group):
+        return (not any(a['id'] in changed or a.get('recovery_issue') for a in group['atoms'])
+                and not any(r['lo'] < group['hi'] and group['lo'] < r['hi']
+                            for r in [*registry, *exclusions]))
+    mains = [g for g in groups if available(g)
+             and all(a['kind'] in {'text', 'math'} and a['role'] in {'text', 'paragraph'}
+                     for a in g['atoms'])
+             and .3 <= g['bbox'][2]-g['bbox'][0] <= .8
+             and .015 <= g['bbox'][3]-g['bbox'][1] <= .28
+             and 40 <= g['hi']-g['lo'] <= 1800]
+    owned = OrderedDict()
+    for note in groups:
+        c = note['bbox']
+        if (not available(note) or not all(a['kind'] in {'text', 'math'} and a['role']=='aside_text'
+                                          for a in note['atoms'])
+                or not .035 <= c[2]-c[0] <= .22 or not 0 < c[3]-c[1] <= .15
+                or not 4 <= note['hi']-note['lo'] <= 240):
+            continue
+        candidates = []
+        for main in mains:
+            b = main['bbox']
+            overlap = min(b[3],c[3])-max(b[1],c[1])
+            if (main['page']==note['page']
+                    and (.008 <= c[0]-b[2] <= .12 or .008 <= b[0]-c[2] <= .12)
+                    and overlap >= .5*min(b[3]-b[1],c[3]-c[1])):
+                candidates.append(main)
+        if len(candidates)==1:
+            main=candidates[0]
+            owned.setdefault(main['group'], (main, []))[1].append(note)
+    rows = []
+    for main, notes in owned.values():
+        b=main['bbox'];notes.sort(key=lambda n:n['bbox'][1])
+        # Mixed sides or overlapping notes have no unambiguous column layout.
+        if (len({n['bbox'][0]>b[2] for n in notes})!=1
+                or any(a['bbox'][3]>z['bbox'][1] for a,z in zip(notes,notes[1:]))):
+            continue
+        c=[min(n['bbox'][0] for n in notes),min(n['bbox'][1] for n in notes),
+           max(n['bbox'][2] for n in notes),max(n['bbox'][3] for n in notes)]
+        extent=max(b[2],c[2])-min(b[0],c[0])
+        widths=[(b[2]-b[0])/extent,(c[2]-c[0])/extent]
+        if not .07 <= widths[1] <= .3:continue
+        rows.append(dict(method='explicit_geometric_side_note',lo=main['lo'],hi=main['hi'],
+            main_range=[main['lo'],main['hi']],note_ranges=[[n['lo'],n['hi']] for n in notes],
+            note_colors=[None]*len(notes),widths=widths,main_left=b[0]<c[0],
+            page=main['page']+1,main_bbox=b,note_bbox=c,targets=[]))
+    return rows
+
+
 def side_note_rows(index, panels, registry, exclusions=(), changed=()):
     groups = OrderedDict()
     for n, atom in enumerate(index.atoms):

@@ -4,7 +4,7 @@ from copy import deepcopy
 import re
 import unicodedata
 
-METHOD = 'page_footnotes_same_page_unique_v4'
+METHOD = 'page_footnotes_same_page_unique_v5'
 FORMULA_DEDUP_METHOD = 'page_footnote_overlapping_formula_copy_v1'
 MARGINALS = {'header', 'footer', 'page_number'}
 CIRCLED = '①②③④⑤⑥⑦⑧⑨⑩⑪⑫⑬⑭⑮⑯⑰⑱⑲⑳➀➁➂➃➄➅➆➇➈➉❶❷❸❹❺❻❼❽❾❿'
@@ -245,7 +245,9 @@ def classify_footnotes(index, plan):
                 plain = (part['kind'] == 'text' and marker['text'] in part['text']
                          and native_raised_marker(index,atom,marker))
                 for a, z in marker_occurrences(part['text'], marker, part['kind'], allow_plain=plain):
-                    if plain and not native_raised_marker(index,atom,marker,part['offset']+a,part['offset']+z):
+                    explicit = (all(c in SUPERSCRIPTS for c in part['text'][a:z]) or
+                                re.search(r'(?:\^\s*\{?\s*|\\textsuperscript\s*\{\s*)$', part['text'][:a]))
+                    if plain and not explicit and not native_raised_marker(index,atom,marker,part['offset']+a,part['offset']+z):
                         continue
                     lo, hi = part['lo']+a, part['lo']+z
                     atom = index.atoms[index.ids[part['atom']]]
