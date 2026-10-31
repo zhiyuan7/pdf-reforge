@@ -16,6 +16,86 @@ from book_pipeline.publishing.side_notes import side_note_rows, explicit_side_no
 
 
 class SideNoteTests(unittest.TestCase):
+    def test_full_alignment_precedes_small_overlap_with_previous_paragraph(self):
+        index = self.explicit_source()
+        index.atoms[0]['bbox'] = [.1,.27,.65,.287]
+        index.atoms[-1]['bbox'] = [.69,.262,.83,.3]
+        previous = dict(index.atoms[0], id='previous', group='previous',
+                        bbox=[.1,.215,.65,.27])
+        index = SourceIndex({**index.source,'atoms':[previous,*index.atoms]})
+        rows = explicit_side_note_rows(index)
+        self.assertEqual(len(rows), 1)
+        self.assertEqual(rows[0]['main_bbox'], index.atoms[1]['bbox'])
+
+    def test_multiline_reference_at_paragraph_tail_needs_real_unique_overlap(self):
+        for defect in ('none', 'no_overlap', 'barely_touches', 'too_tall', 'ambiguous'):
+            with self.subTest(defect=defect):
+                index = self.explicit_source()
+                index.atoms[index.ids['aside']]['bbox'] = [.69,.293,.83,.329]
+                if defect == 'no_overlap': index.atoms[-1]['bbox'][1] = .301
+                if defect == 'barely_touches': index.atoms[-1]['bbox'][1] = .299
+                if defect == 'too_tall': index.atoms[-1]['bbox'][3] = .36
+                if defect == 'ambiguous':
+                    index = SourceIndex({**index.source, 'atoms': [
+                        dict(index.atoms[0], id='other', group='other'), *index.atoms]})
+                before = deepcopy(index.source)
+                self.assertEqual(len(explicit_side_note_rows(index)), int(defect == 'none'))
+                self.assertEqual(index.source, before)
+
+    def test_short_cjk_paragraph_retains_its_geometric_aside(self):
+        index = self.explicit_source()
+        body = index.atoms[index.ids['body']]
+        body.update(content='指数函数保证各项为正，分母中的求和保证这些数的总和为一。',
+                    length=len('指数函数保证各项为正，分母中的求和保证这些数的总和为一。'))
+        index = SourceIndex(index.source)
+        self.assertLess(body['length'], 40)
+        self.assertEqual(len(explicit_side_note_rows(index)), 1)
+        body.update(content='短标签', length=3)
+        self.assertEqual(explicit_side_note_rows(SourceIndex(index.source)), [])
+
+    def test_blank_lines_in_aside_are_paragraphs_and_preserve_inline_math(self):
+        with tempfile.TemporaryDirectory() as name:
+            index=self.explicit_source()
+            note=index.atoms[index.ids['aside']]
+            note.update(content='Notebook\nDetails\n\nExercises',length=len('Notebook\nDetails\n\nExercises'))
+            math=dict(note,id='note-math',kind='math',content=r'\ell_1',length=6)
+            index=SourceIndex({**index.source,'atoms':[*index.atoms,math]})
+            root=Path(name)
+            audit=write_project(index,dict(corrections=[],joins=[],exclusions=[],bold_spans=[]),
+                [],[],dict(title='Note paragraphs',author=''),load_config(),root,sample_mode=True)
+            text=''.join(p.read_text() for p in (root/'chapters').glob('*.tex'))
+            self.assertIn(r'Notebook\\ Details\par\smallskip\noindent Exercises',text)
+            self.assertIn('\\ell_1$%\n% end-source-atom:',text)
+            result=compile_project(root,{t:executable(t) for t in ('xelatex','latexmk')})
+            self.assertTrue(result['success'],result['log_tail'])
+            self.assertEqual(result['warnings'],[])
+            self.assertTrue(audit['coverage_complete'])
+            with pymupdf.open(root/'main.pdf') as pdf:
+                self.assertTrue(all('source-'+a['id'] in pdf.resolve_names() for a in index.atoms))
+
+    def test_source_adjacent_heading_is_rendered_inside_measured_pair(self):
+        for gap in ('none', 'body', 'page'):
+            with self.subTest(gap=gap), tempfile.TemporaryDirectory() as name:
+                index=self.explicit_source()
+                heading=dict(index.atoms[0], id='heading', group='heading', role='paragraph_title',
+                             block_type='paragraph_title', content='Model interpretation:', length=21,
+                             bbox=[.1,.15,.6,.18])
+                atoms=[heading]
+                if gap=='body':
+                    atoms.append(dict(heading,id='gap',group='gap',role='text',block_type='text',
+                                      content='Intervening text.',length=17))
+                if gap=='page':heading['page']=1
+                index=SourceIndex({**index.source,'atoms':[*atoms,*index.atoms]})
+                registry=[dict(kind='subsection',anchor='heading-title',lo=0,hi=21,
+                               label='Model interpretation:',name='Model interpretation:',heading_level=3)]
+                audit=write_project(index,dict(corrections=[],joins=[],exclusions=[],bold_spans=[]),
+                    registry,[],dict(title='Source title',author=''),load_config(),Path(name),sample_mode=True,
+                    heading_layout=dict(standalone_levels=[]))
+                text=''.join(p.read_text() for p in (Path(name)/'chapters').glob('*.tex'))
+                self.assertEqual('\\begin{BookSideBySide}[{' in text,gap=='none')
+                self.assertEqual(text.count('\\BookHeading{3}'),1)
+                self.assertTrue(audit['coverage_complete'])
+
     def explicit_source(self, left=False):
         body='A complete paragraph explains the probability model and its mathematical consequences. '*3
         specs=[('body',body,'text',[.25,.2,.8,.3] if left else [.1,.2,.65,.3]),
@@ -59,7 +139,11 @@ class SideNoteTests(unittest.TestCase):
                     page=pdf[names['source-body']['page']]
                     main=page.search_for('A complete paragraph')[0];note=page.search_for('Appendix')[0]
                     self.assertEqual(main.x0>note.x0,left)
-                    self.assertLess(abs(main.y0-note.y0),12)
+                    # The source note begins in the paragraph's middle. It
+                    # must retain that relationship after reflow on either side.
+                    bottom=max(r.y1 for r in page.search_for('consequences.'))
+                    self.assertGreater(note.y0,main.y0+12)
+                    self.assertLess(note.y1,bottom+12)
                     self.assertEqual(page.get_text().count('Appendix'),1)
                     self.assertGreater(page.search_for('The following')[0].y0,
                                        max(r.y1 for r in page.search_for('consequences.')))

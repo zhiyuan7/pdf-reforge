@@ -1,6 +1,47 @@
 """Bounded lateral notes supported by adjacent, disjoint source geometry."""
 from collections import OrderedDict
 from pathlib import Path
+from unicodedata import east_asian_width
+
+
+def include_following_display(index, rows, barriers=(), changed=()):
+    """Measure a colon-ending lateral paragraph with its bounded next formula.
+
+    Preserve source ownership, never cross structural or page boundaries, and
+    leave long derivations in ordinary flow instead of making a tall box.
+    """
+    from book_pipeline.structure.headings import valid_box
+    result = []
+    for row in rows:
+        if (row['method'] not in {'explicit_geometric_side_note', 'native_small_font_side_note',
+                                 'native_marginal_glossary'} or row.get('table')
+                or row['hi'] == index.prefix[-1]
+                or not index.text(*row['main_range']).rstrip().endswith((':','：'))):
+            result.append(row); continue
+        cursor = row['hi']
+        for lo,hi in sorted(row['note_ranges']):
+            if lo == cursor:
+                cursor = hi
+        if cursor == index.prefix[-1]:
+            result.append(row); continue
+        first = index.ids[index.address(cursor)['atom']]
+        atom = index.atoms[first]
+        main = [a for a,_,_ in index.fragments(*row['main_range'])]
+        b, c = main[-1].get('block_bbox') or main[-1].get('bbox'), atom.get('bbox')
+        end = index.prefix[first+1]
+        if (atom['kind'] != 'display_math' or len(index.groups[atom['group']]) != 1
+                or atom['page'] != main[0]['page'] or any(a['page'] != atom['page'] for a in main)
+                or atom['id'] in changed or atom.get('source_panel') or atom.get('recovery_issue')
+                or len(atom['content']) > 1400 or not valid_box(b) or not valid_box(c)
+                or c[3]-c[1] > .12 or not -.01 <= c[1]-b[3] <= .06
+                or c[0] < b[0]-.03 or c[2] > b[2]+.03
+                or any(r['lo'] < end and row['lo'] < r['hi']
+                       and [r['lo'],r['hi']] not in [row['main_range'], *row['note_ranges']]
+                       for r in barriers)
+                or any(other is not row and other['lo'] < end and row['hi'] < other['hi'] for other in rows)):
+            result.append(row); continue
+        result.append(dict(row, hi=end, following_range=[cursor,end]))
+    return result
 
 
 def explicit_side_note_rows(index, registry=(), exclusions=(), changed=()):
@@ -11,33 +52,74 @@ def explicit_side_note_rows(index, registry=(), exclusions=(), changed=()):
     this also preserves the relationship after translation.
     """
     from book_pipeline.publishing.native_lateral import native_groups
+    from book_pipeline.publishing.native_margin_notes import native_margin_evidence
+    from book_pipeline.structure.run_in_titles import mixed_run_in_title_spans
     groups = native_groups(index, allow_ocr=True)
+    observed = native_margin_evidence(index, allow_fragmented_owners=True)
+    mixed_groups = {r['group'] for r in mixed_run_in_title_spans(index)}
     def available(group):
         return (not any(a['id'] in changed or a.get('recovery_issue') for a in group['atoms'])
                 and not any(r['lo'] < group['hi'] and group['lo'] < r['hi']
                             for r in [*registry, *exclusions]))
-    mains = [g for g in groups if available(g)
-             and all(a['kind'] in {'text', 'math'} and a['role'] in {'text', 'paragraph'}
+    from book_pipeline.publishing.native_prose import fragmented_native_prose
+    joins = fragmented_native_prose(index, registry, exclusions, changed, margin_notes=observed)
+    pairs = {(r['left'], r['right']) for r in joins}
+    merged = []
+    for group in groups:
+        if group['group'] in observed:
+            continue
+        if merged and (merged[-1]['atoms'][-1]['id'], group['atoms'][0]['id']) in pairs:
+            previous = merged[-1]
+            boxes = [previous['bbox'], group['bbox']]
+            merged[-1] = dict(previous, hi=group['hi'],
+                atoms=previous['atoms']+group['atoms'],
+                members=previous['members']+[group['group']],
+                ranges=previous['ranges']+[[group['lo'], group['hi']]],
+                bbox=[min(b[0] for b in boxes), min(b[1] for b in boxes),
+                      max(b[2] for b in boxes), max(b[3] for b in boxes)])
+        else:
+            merged.append(dict(group, members=[group['group']], ranges=[[group['lo'],group['hi']]]))
+    # Count full-width text by its reading width: a concise Chinese translation
+    # must not lose the aside that belongs to its original paragraph geometry.
+    mains = [g for g in merged if available(g)
+             and all(a['kind'] in {'text', 'math'} and (a['role'] in {'text', 'paragraph'}
+                     or g['group'] in mixed_groups and a['role']=='paragraph_title')
                      for a in g['atoms'])
              and .3 <= g['bbox'][2]-g['bbox'][0] <= .8
              and .015 <= g['bbox'][3]-g['bbox'][1] <= .28
-             and 40 <= g['hi']-g['lo'] <= 1800]
+             and g['hi']-g['lo'] <= 1800
+             and sum(2 if east_asian_width(c) in {'W','F'} else 1
+                     for a in g['atoms'] for c in a['content']) >= 40]
     owned = OrderedDict()
     for note in groups:
         c = note['bbox']
-        if (not available(note) or not all(a['kind'] in {'text', 'math'} and a['role']=='aside_text'
-                                          for a in note['atoms'])
+        if (not available(note) or not (note['group'] in observed or all(
+                a['kind'] in {'text', 'math'} and a['role']=='aside_text' for a in note['atoms']))
                 or not .035 <= c[2]-c[0] <= .22 or not 0 < c[3]-c[1] <= .15
                 or not 4 <= note['hi']-note['lo'] <= 240):
             continue
-        candidates = []
+        candidates, tail_candidates = [], []
         for main in mains:
+            if note['group'] in observed and not set(observed[note['group']]['owners']) <= set(main['members']):
+                continue
             b = main['bbox']
             overlap = min(b[3],c[3])-max(b[1],c[1])
+            # A multiline margin reference can start alongside the paragraph's
+            # final line and continue beside the following display. Requiring
+            # half its height loses such references after OCR box rounding.
+            # Keep real overlap, a bounded tail, and unique ownership below.
+            tail_aligned = (overlap >= .003 and b[3]-.012 <= c[1] < b[3]
+                            and c[3]-b[3] <= .04 and c[3]-c[1] <= .05)
             if (main['page']==note['page']
-                    and (.008 <= c[0]-b[2] <= .12 or .008 <= b[0]-c[2] <= .12)
-                    and overlap >= .5*min(b[3]-b[1],c[3]-c[1])):
-                candidates.append(main)
+                    and (.008 <= c[0]-b[2] <= .12 or .008 <= b[0]-c[2] <= .12)):
+                if overlap >= .5*min(b[3]-b[1],c[3]-c[1]):
+                    candidates.append(main)
+                elif tail_aligned:
+                    tail_candidates.append(main)
+        # A fully aligned paragraph takes precedence over a tiny overlap with
+        # its predecessor. Tail alignment is only a fallback, never a tie-break
+        # between two paragraphs with equally strong evidence.
+        candidates = candidates or tail_candidates
         if len(candidates)==1:
             main=candidates[0]
             owned.setdefault(main['group'], (main, []))[1].append(note)
@@ -55,7 +137,14 @@ def explicit_side_note_rows(index, registry=(), exclusions=(), changed=()):
         if not .07 <= widths[1] <= .3:continue
         rows.append(dict(method='explicit_geometric_side_note',lo=main['lo'],hi=main['hi'],
             main_range=[main['lo'],main['hi']],note_ranges=[[n['lo'],n['hi']] for n in notes],
-            note_colors=[None]*len(notes),widths=widths,main_left=b[0]<c[0],
+            main_ranges=main['ranges'],
+            prose_joins=[r for r in joins if r['left'] in {a['id'] for a in main['atoms']}
+                         and r['right'] in {a['id'] for a in main['atoms']}],
+            note_colors=[observed.get(n['group'],{}).get('color') for n in notes],
+            inferred_note_groups=[n['group'] for n in notes if n['group'] in observed],
+            note_top_fractions=[max(0,min(.8,(n['bbox'][1]-b[1])/max(.001,b[3]-b[1])))
+                                for n in notes],
+            widths=widths,main_left=b[0]<c[0],
             page=main['page']+1,main_bbox=b,note_bbox=c,targets=[]))
     return rows
 

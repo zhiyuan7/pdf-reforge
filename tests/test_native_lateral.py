@@ -183,6 +183,57 @@ class NativeLateralTests(unittest.TestCase):
         atoms[-1]['source_text_runs']=[dict(start=0,end=12,color=[.2,.5,.6],method='native_span_ink_v1')]
         return SourceIndex(dict(atoms=atoms,source_page_count=1))
 
+    def lateral_display_source(self, root, *, image_left=False, intervening=False, next_page=False, inline=False):
+        index=self.source(root,image_left=image_left)
+        atoms=index.atoms[:4]
+        if intervening:
+            text='An independent intervening paragraph.'
+            atoms.append(dict(id='gap',group='gap',page=0,kind='text',role='text',block_type='text',
+                              content=text,length=len(text),bbox=[.1,.42,.9,.46]))
+        text=r'f(x)=x^2\tag{2.7}'
+        atoms.append(dict(id='display',group='display',page=int(next_page),kind='math' if inline else 'display_math',
+                          role='equation',block_type='equation',content=text,length=len(text),bbox=[.1,.5,.9,.56]))
+        text='Following prose comes after the complete construction.'
+        atoms.append(dict(id='following',group='following',page=int(next_page),kind='text',role='text',block_type='text',
+                          content=text,length=len(text),bbox=[.1,.6,.9,.66]))
+        return SourceIndex({**index.source,'atoms':atoms})
+
+    def test_lateral_figure_float_bounds_only_a_source_adjacent_display(self):
+        from book_pipeline.publishing.latex import Renderer
+        for options in ({},dict(image_left=True),dict(intervening=True),dict(next_page=True),dict(inline=True)):
+            with self.subTest(options=options),tempfile.TemporaryDirectory() as name:
+                root=Path(name);index=self.lateral_display_source(root,**options)
+                (root/'render').mkdir()
+                renderer=Renderer(index,dict(corrections=[],joins=[],exclusions=[],bold_spans=[]),
+                                  [],[],root/'render',dict(float_assets=True))
+                tex=''.join(renderer.render())
+                expected=not any(options.get(k) for k in ('intervening','next_page','inline'))
+                self.assertEqual(r'\FloatBarrier' in tex,expected)
+                self.assertEqual(any(r['method']=='source_adjacent_figure_before_display'
+                                     for r in renderer.source_order_layout),expected)
+                if expected:
+                    self.assertLess(tex.index(r'\end{figure}'),tex.index(r'\FloatBarrier'))
+
+    def test_compiled_lateral_figure_cannot_overtake_its_adjacent_display(self):
+        with tempfile.TemporaryDirectory() as name:
+            root=Path(name);index=self.lateral_display_source(root,image_left=True);project=root/'latex'
+            audit=write_project(index,dict(corrections=[],joins=[],exclusions=[],bold_spans=[]),
+                [],[],dict(title='Lateral figure order',author=''),{**load_config(),'float_assets':True},project,sample_mode=True)
+            main=project/'main.tex'
+            main.write_text(main.read_text().replace(r'\input{chapters/generated-001.tex}',
+                '\\noindent\\rule{1pt}{550pt}\\par\n'+r'\input{chapters/generated-001.tex}'))
+            result=compile_project(project,{t:executable(t) for t in ('xelatex','latexmk')})
+            self.assertTrue(result['success'],result['log_tail']);self.assertEqual(result['warnings'],[])
+            with pymupdf.open(project/'main.pdf') as pdf:
+                names=pdf.resolve_names();self.assertTrue(set(audit['source_anchors'].values())<=names.keys())
+                image_page=names['source-image']['page'];display_page=names['source-display']['page']
+                self.assertGreater(image_page,0)
+                self.assertGreaterEqual(display_page,image_page)
+                if image_page==display_page:
+                    self.assertGreater(pdf[display_page].search_for('(2.7)')[0].y0,
+                                       pdf[image_page].get_image_info()[0]['bbox'][3])
+                self.assertEqual(sum(p.get_text().count('Following prose') for p in pdf),1)
+
     def test_caption_geometry_and_complete_native_ownership_are_required(self):
         with tempfile.TemporaryDirectory() as name:
             root=Path(name)

@@ -172,6 +172,29 @@ def background_task_running(state):
     return not re.search(r'no such (?:object|container)', result['stderr'], re.I)
 
 
+def reconcile_implementation(state, now):
+    """Called with workflow.lock held: an old boolean cannot own the lock.
+
+    Interactive implementations must hold the same lock as scheduled workers.
+    A background conversion (including an unconfirmed Docker state) still owns
+    its inputs and must finish before another iteration can change them.
+    """
+    priority_path = STATE/'udl-priority.json'
+    if not priority_path.exists():
+        return True
+    priority = json.loads(priority_path.read_text())
+    if not priority.get('implementation_in_progress'):
+        return True
+    if background_task_running(priority):
+        return False
+    priority.update(implementation_in_progress=False,
+                    implementation_recovered_at=now.isoformat(),
+                    implementation_recovery_reason='workflow_lock_acquired_no_active_conversion')
+    save(priority_path, priority)
+    state['user_priority'] = priority
+    return True
+
+
 def run_locked(args):
     now = datetime.now(TZ)
     day = now.date().isoformat()
@@ -190,17 +213,15 @@ def run_locked(args):
             save(STATE/'last-check.json', dict(checked_at=now.isoformat(), status='idle',
                                              reason='waiting_for_next_slot_or_slot_already_started'))
             return 0
-        # Release checks use temporary fixtures and must still run at 23:00
-        # while a resumable CPU conversion continues in its own output.
-        if mode == 'iterate' and background_task_running(state):
-            save(STATE/'last-check.json', dict(checked_at=now.isoformat(), status='waiting',
-                                             reason='background_task_running_or_completion_unconfirmed',
-                                             active_container=state.get('active_container')))
-            return 0
     if mode == 'preview':
         print(json.dumps(snapshot(day, STATE/'preview', preview=True), ensure_ascii=False, indent=2))
         return 0
     if mode == 'iterate':
+        if background_task_running(state) or not reconcile_implementation(state, now):
+            save(STATE/'last-check.json', dict(checked_at=now.isoformat(), status='waiting',
+                                             reason='background_task_running_or_completion_unconfirmed',
+                                             active_container=state.get('active_container')))
+            return 0
         state.update(iteration_attempted=key, iteration_status='running')
         save(state_path, state)
         directory = STATE/'iterations'/now.strftime('%Y%m%d-%H%M%S')

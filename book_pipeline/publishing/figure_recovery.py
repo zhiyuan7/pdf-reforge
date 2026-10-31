@@ -26,8 +26,14 @@ def recover_native_vector_labels(index,directory,edited_atoms=()):
                     or not valid_box(atom.get('bbox')) or not 0<=atom['page']<len(pdf)):
                 continue
             page=pdf[atom['page']];b=atom['bbox'];region=list(b)
+            clipped_filled_ink=False
             blockers=[a['bbox'] for a in index.atoms if a['page']==atom['page']
                       and a['id']!=atom['id'] and valid_box(a.get('bbox'))]
+            image_boxes=[(a['id'],a['bbox']) for a in index.atoms if a['page']==atom['page']
+                         and a['kind']=='image' and valid_box(a.get('bbox'))]
+            def distance(c, box):
+                return (max(box[0]-c[2],c[0]-box[2],0)*page.rect.width)**2 + (
+                    max(box[1]-c[3],c[1]-box[3],0)*page.rect.height)**2
             overlaps=lambda a,c:min(a[2],c[2])>max(a[0],c[0]) and min(a[3],c[3])>max(a[1],c[1])
             for path in page.get_drawings():
                 rect=path['rect']
@@ -38,12 +44,32 @@ def recover_native_vector_labels(index,directory,edited_atoms=()):
                         or c[2]>b[2]+.05 or c[3]>b[3]+.05
                         or any(overlaps(c,other) for other in blockers)):
                     continue
+                # Panel letters between two rows belong to the nearer image.
+                # Ties have no reliable owner and must not enlarge either crop.
+                own_distance=distance(c,b)
+                if any(other!=atom['id'] and distance(c,box)<=own_distance+1e-6
+                       for other,box in image_boxes):
+                    continue
                 proposed=[min(region[0],c[0]),min(region[1],c[1]),
                           max(region[2],c[2]),max(region[3],c[3])]
-                if not any(overlaps(proposed,other) for other in blockers):region=proposed
-            # Substantial external ink is required; tiny edge differences can
-            # be stroke overshoot or an unrelated neighboring fragment.
-            if max(abs(x-y) for x,y in zip(region,b))<.01:continue
+                if not any(overlaps(proposed,other) for other in blockers):
+                    region=proposed
+                    # A glyph bisected by the crop can lose its upper half
+                    # while protruding less than the normal overshoot cutoff.
+                    # Require substantial filled ink on both sides of the
+                    # original edge, not a thin stroke or antialiasing fringe.
+                    area=rect.width*rect.height
+                    overlap=(max(0,min(c[2],b[2])-max(c[0],b[0]))*page.rect.width
+                             *max(0,min(c[3],b[3])-max(c[1],b[1]))*page.rect.height)
+                    protrusion=max(abs(x-y)*scale for x,y,scale in
+                                   zip(proposed,b,[page.rect.width,page.rect.height]*2))
+                    if ('f' in path['type'] and area>=4 and .15<=overlap/area<=.85
+                            and protrusion>=.5):
+                        clipped_filled_ink=True
+            # Small outlined panel letters can extend only a few points beyond
+            # a tight plot box. Reject minor stroke overshoot while retaining
+            # these labels; ownership and text barriers were checked above.
+            if max(abs(x-y) for x,y in zip(region,b))<.003 and not clipped_filled_ink:continue
             # A small antialiasing border is clipped to the same text barriers.
             padded=[max(0,region[0]-.001),max(0,region[1]-.001),
                     min(1,region[2]+.001),min(1,region[3]+.001)]

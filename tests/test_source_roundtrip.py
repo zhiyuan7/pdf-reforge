@@ -11,6 +11,31 @@ from book_pipeline.ingestion.source import SourceIndex, load_source, materialize
 
 
 class SourceRoundtripTests(unittest.TestCase):
+    def test_nested_caption_and_link_inherit_nearest_geometry_and_semantic_role(self):
+        with tempfile.TemporaryDirectory() as name:
+            root=Path(name); origin=root/'ocr';origin.mkdir();pdf=root/'input.pdf'
+            with pymupdf.open() as document:
+                page=document.new_page();page.get_pixmap().save(origin/'image.png');document.save(pdf)
+            image_box=[.2,.2,.8,.4];caption_box=[.25,.44,.75,.5];note_box=[.02,.55,.18,.62]
+            explicit=[.3,.46,.4,.48]
+            save(origin/'middle_json.json',dict(schema='docvortex.middle',schema_version='2.0',pages=[dict(
+                page_idx=0,blocks=[dict(index=0,type='image',bbox=image_box,content=[
+                    dict(type='image_body',content='',image_path='image.png'),
+                    dict(type='image_caption',bbox=caption_box,content=[
+                        dict(type='text',content='Translated caption',bbox=None),
+                        dict(type='equation_inline',content='x=1'),
+                        dict(type='text',content='explicit leaf',bbox=explicit), 'caption tail'])]),
+                    dict(index=1,type='aside_text',bbox=note_box,content=[dict(type='hyperlink',
+                        url='https://example.org/notebook',content=[dict(type='text',content='Notebook reference',bbox=None)])])])]))
+            save(origin/'manifest.json',dict(input_sha256=digest(pdf),mineru_version='test'))
+            before=digest(origin/'middle_json.json');atoms=load_source(pdf,origin)['atoms']
+            self.assertEqual([a['bbox'] for a in atoms],
+                             [image_box,caption_box,caption_box,explicit,caption_box,note_box])
+            self.assertEqual([a['role'] for a in atoms],
+                             ['image_body','image_caption','image_caption','image_caption','image_caption','aside_text'])
+            self.assertEqual(atoms[2]['kind'],'math')
+            self.assertEqual(digest(origin/'middle_json.json'),before)
+
     def test_automatic_whole_book_reuse_cannot_select_a_partial_preflight(self):
         from book_pipeline.application.pipeline import prepare_book_source
         from book_pipeline.config import load_config
@@ -89,5 +114,9 @@ class SourceRoundtripTests(unittest.TestCase):
             self.assertEqual(meanings(raw),meanings(SourceIndex(load_source(pdf,again))))
             self.assertEqual(raw_hash,digest(origin/'middle_json.json'))
             self.assertEqual(materialize_source(raw,dest),dest)
+            manifest=read(dest/'manifest.json')
+            manifest['materialization_method']='source_roles_and_equation_assets_roundtrip_v6'
+            save(dest/'manifest.json',manifest)
+            with self.assertRaisesRegex(ValueError,'cache does not match'):materialize_source(raw,dest)
             manifest=read(dest/'manifest.json');manifest.pop('materialization_method');save(dest/'manifest.json',manifest)
             with self.assertRaisesRegex(ValueError,'cache does not match'):materialize_source(raw,dest)

@@ -419,10 +419,15 @@ class Renderer:
         self.image_search = ImageSearch(index, self.directory)
         self.source_anchors = {}
         edited_atoms = {atom for atom, rows in self.corrections.items() if rows} | {atom for atom, rows in self.refs.items() if rows}
+        from book_pipeline.publishing.native_examples import native_examples
+        self.example_ink, self.example_labels = native_examples(index, registry, decisions['exclusions'],
+            edited_atoms, pages=decisions.get('reviewed_ink_pages', []))
+        self.source_order_layout.extend(dict(run, atom=atom) for atom,runs in self.example_ink.items() for run in runs)
         self.recovered_figures = recover_fragmented_figures(index, registry, self.directory, edited_atoms)
         from book_pipeline.publishing.figure_recovery import recover_native_vector_labels
         self.recovered_figures.update(recover_native_vector_labels(index,self.directory,edited_atoms))
-        self.image_rows = recover_horizontal_images(index, registry, self.directory, edited_atoms)
+        self.image_rows = recover_horizontal_images(index, registry, self.directory, edited_atoms,
+            image_boxes={a: r['bbox'] for a, r in self.recovered_figures.items()})
         self.image_row_members = {member for row in self.image_rows.values() for member in row['members']}
         self.image_row_groups = {group for row in self.image_rows.values() for group in row['groups']}
         self.image_row_targets = {target for row in self.image_rows.values() for target in row['targets']}
@@ -432,6 +437,11 @@ class Renderer:
         for atom, figure in self.recovered_figures.items():
             self.source_order_layout.append({'atom': atom, 'method': 'fragmented_diagram_preserved_from_source_page', **figure})
         self.bold_spans=[index.span(s) for s in decisions.get('bold_spans',[])]
+        from book_pipeline.structure.run_in_titles import mixed_run_in_title_spans
+        mixed_titles = mixed_run_in_title_spans(index, [*registry, *decisions['exclusions']],
+            {c['atom'] for c in decisions['corrections']})
+        self.bold_spans.extend((r['lo'],r['mid']) for r in mixed_titles)
+        self.source_order_layout.extend(mixed_titles)
         self.source_styles = decisions.get('source_styles', {})
         self.toc_position = min((e["lo"] for e in decisions["exclusions"] if "original_toc" in e.get("reasons", [e["reason"]])), default=None)
         self.page_footnotes = decisions.get('page_footnotes', [])
@@ -585,6 +595,14 @@ class Renderer:
             if mark not in self.source_order_layout:
                 self.source_order_layout.append(mark)
         chunks, cursor = [], lo
+        for run in self.example_labels.get(atom['id'], []):
+            start, end = run['start'], run['end']
+            if lo <= start < end <= hi and not any(a < end and start < z for a,z,_ in changes):
+                changes.append((start, end, ('\n\\par\\noindent ' if start else '')
+                    + r'\textbf{' + self.source_text_fragment(atom, start, end) + '}'))
+                row = dict(run, atom=atom['id'])
+                if row not in self.source_order_layout:
+                    self.source_order_layout.append(row)
         for start, end, replacement in sorted(changes):
             chunks.append(self.source_text_fragment(atom, cursor, start))
             chunks.append(replacement)
@@ -633,12 +651,13 @@ class Renderer:
         """Apply observed ink, preserving text and source offsets."""
         text_escape = lambda text: escape(text, atom['group'] in self.latin_quote_groups)
         chunks, cursor = [], lo
-        for run in [*atom.get('source_text_runs', []), *self.raster_inline_ink.get(atom['id'], [])]:
+        from book_pipeline.publishing.native_examples import INK_METHOD
+        for run in [*(atom.get('source_text_runs') or self.example_ink.get(atom['id'], [])), *self.raster_inline_ink.get(atom['id'], [])]:
             a, z = max(lo, run['start']), min(hi, run['end'])
             if a >= z: continue
             rgb = run['color']
             if (run.get('method') not in {'native_span_ink_v1', 'neighbor_verified_raster_square_ink_v1',
-                                       'exact_cpu_scan_note_reference_ink_v1'}
+                                       'exact_cpu_scan_note_reference_ink_v1', INK_METHOD}
                     or not 0 <= run['start'] < run['end'] <= len(atom['content'])
                     or a < cursor or len(rgb) != 3 or not all(isinstance(c,(int,float)) and 0 <= c <= 1 for c in rgb)):
                 raise ValueError('Invalid source text ink range: ' + atom['id'])
@@ -722,6 +741,8 @@ class Renderer:
                     # an extra line above the equation, including inside boxes.
                     value = value.rstrip()
         value = self.source_marker(atom) + value
+        if lo == 0 and self.example_labels.get(atom['id']):
+            value = '\n\\par\\noindent ' + value
         if atom['id'] in self.margin_references and hi == atom['length']:
             value += self.margin_asset_tex(self.margin_references[atom['id']])
         return value
@@ -783,6 +804,12 @@ class Renderer:
                 evidence=['formula image re-read after a compiler error; replacement passed XeLaTeX syntax validation']))
             content = replacement
         if atom['kind'] in {'math','display_math'}:
+            from book_pipeline.publishing.native_math_rows import native_math_rows
+            rows = native_math_rows(atom, content, self.index.source.get('source_pdf'))
+            if rows:
+                self.tex_compatibility.append(dict(atom=atom['id'], original=content, rendered=rows,
+                    evidence=['native equals-sign baselines confirm source equation rows; aligned layout preserves every mathematical token and equation number']))
+                content = rows
             compatible,evidence=math_compatibility(content)
             if evidence:
                 self.tex_compatibility.append({'atom':atom['id'],'original':content,'rendered':compatible,'evidence':evidence})
@@ -947,7 +974,18 @@ class Renderer:
                     break
         return ''.join(self.fragment(atom, lo, hi, False) for atom, lo, hi in parts)
 
-    def wrapped_figure_tex(self, row):
+    def figure_display_barrier(self, lo, hi):
+        """Keep a source-adjacent display behind its complete figure float."""
+        stop = bisect_right(self.index.prefix, hi)-1
+        if (0 < stop < len(self.index.atoms) and self.index.prefix[stop] == hi
+                and self.index.atoms[stop]['kind'] == 'display_math'
+                and self.index.atoms[stop-1]['page'] == self.index.atoms[stop]['page']):
+            self.source_order_layout.append(dict(method='source_adjacent_figure_before_display',
+                lo=lo, hi=hi, following=self.index.atoms[stop]['id']))
+            return '\\FloatBarrier\n'
+        return ''
+
+    def wrapped_figure_tex(self, row, heading=''):
         if row['method']=='explicit_algorithm_source_lines':
             parts=[]
             for atom,lo,hi in self.index.fragments(row['lo'],row['hi']):
@@ -1006,12 +1044,15 @@ class Renderer:
                 rows[0]+'\n\\midrule\n'+'\n'.join(rows[1:])+'\n\\bottomrule\n\\end{tabular}\n\\end{samepage}\n')
         if row['method'] in {'native_marginal_glossary','native_small_font_side_note','explicit_geometric_side_note'}:
             main=(self.wrapped_figure_tex(row['table']) if row.get('table') else
-                  ''.join(self.fragment(a,l,h,False) for a,l,h in self.index.fragments(*row['main_range'])))
+                  '\n'.join(''.join(self.fragment(a,l,h,False)
+                      for a,l,h in self.index.fragments(*bounds))
+                      for bounds in row.get('main_ranges', [row['main_range']])))
             notes=[]
             for bounds,color in zip(row['note_ranges'],row['note_colors']):
                 # Math fragments contain TeX comments and must retain their
                 # newlines. Only source prose line endings are side-note breaks.
-                text=''.join(self.fragment(a,l,h,False).replace('\n',r'\\ ')
+                text=''.join(re.sub(r'\n[ \t]*\n(?:[ \t]*\n)*',
+                    lambda _: r'\par\smallskip\noindent ', self.fragment(a,l,h,False)).replace('\n',r'\\ ')
                     if a['kind']=='text' else self.fragment(a,l,h,False)
                     for a,l,h in self.index.fragments(*bounds))
                 if color is not None:
@@ -1021,11 +1062,20 @@ class Renderer:
                 '\\dimexpr\\ht\\BookSideFirst+\\dp\\BookSideFirst\\relax}\n'
                 if row.get('note_top_fraction') else '')
             compact=row['method']=='native_small_font_side_note'
+            following=(''.join(self.fragment(a,l,h,False)
+                for a,l,h in self.index.fragments(*row['following_range'])) if row.get('following_range') else '')
+            if row.get('note_top_fractions'):
+                note_body = '\\BookSideNoteUsed=0pt\n'+''.join(
+                    '\\BookPositionedSideNote{'+f'{fraction:.5f}'+'}{'+note+'}\n'
+                    for fraction,note in zip(row['note_top_fractions'],notes))
+            else:
+                note_body = note_top+'\\par\\smallskip\\noindent '.join(notes)
             return (('\n\\begingroup\\renewcommand{\\BookSideGap}{2pt}\n' if compact else '')+
-                '\n\\begin{BookSideBySide}{'+f"{row['widths'][0]:.5f}"+'}{'+
-                f"{row['widths'][1]:.5f}"+'}{'+('1' if row['main_left'] else '0')+'}\n'+main+
+                '\n\\begin{BookSideBySide}'+('[{'+heading+'}]' if heading else '')+'{'+f"{row['widths'][0]:.5f}"+'}{'+
+                f"{row['widths'][1]:.5f}"+'}{'+('1' if row['main_left'] else '0')+'}'+
+                ('[{'+following+'}]' if following else '')+'\n'+main+
                 '\n\\BookSideSwitch\n\\scriptsize\\raggedright\\setlength{\\parindent}{0pt}\n'+
-                note_top+'\\par\\smallskip\\noindent '.join(notes)+'\n\\end{BookSideBySide}\n'+
+                note_body+'\n\\end{BookSideBySide}\n'+
                 ('\\endgroup\n' if compact else ''))
         if row['method']=='native_lateral_caption':
             image=self.index.atoms[self.index.ids[row['image']]]
@@ -1041,7 +1091,7 @@ class Renderer:
                 # deferred floats otherwise reserves space before those floats
                 # are scheduled and can intrude into the footer.
                 before='\\begin{figure}[htp]\n\\centering\n'
-                after='\\end{figure}\n'
+                after='\\end{figure}\n'+self.figure_display_barrier(row['lo'],row['hi'])
                 self.source_order_layout.append(dict(method='deferred_lateral_figure_float',
                     lo=row['lo'],hi=row['hi'],page=row['page']))
             return ('\n'+before+'\\begin{BookSideBySide}{'+f"{row['widths'][0]:.5f}"+'}{'+
@@ -1106,15 +1156,25 @@ class Renderer:
         from book_pipeline.publishing.native_tables import native_ruled_tables
         from book_pipeline.publishing.native_lateral import native_side_notes
         native_tables=native_ruled_tables(self.index,self.registry,self.decisions['exclusions'])
+        from book_pipeline.publishing.side_notes import explicit_side_note_rows
+        # Reserve proven complete paragraphs before the older adjacent-note
+        # path can claim just their first fragment. Ordinary notes retain the
+        # established native/table handling below.
+        explicit_candidates=explicit_side_note_rows(self.index,self.registry,
+            [*self.decisions['exclusions'],*native_tables,*self.page_footnotes],
+            {c['atom'] for c in self.decisions['corrections']})
+        fragmented_notes=[r for r in explicit_candidates if r.get('prose_joins')]
+        reserved_notes=[dict(lo=lo,hi=hi) for r in fragmented_notes
+                        for lo,hi in r['note_ranges']]
         native_notes,relocated_notes=native_side_notes(self.index,native_tables,self.registry,
-            self.decisions['exclusions'],self.page_footnotes,
+            [*self.decisions['exclusions'],*fragmented_notes,*reserved_notes],self.page_footnotes,
             {c['atom'] for c in self.decisions['corrections']})
         self.page_footnotes=[n for n in self.page_footnotes if n['id'] not in relocated_notes]
         native_tables=[r for r in native_tables if not any(n.get('table') is r for n in native_notes)]
-        from book_pipeline.publishing.side_notes import explicit_side_note_rows
-        explicit_notes=explicit_side_note_rows(self.index,self.registry,
-            [*self.decisions['exclusions'],*native_tables,*native_notes,*self.page_footnotes],
-            {c['atom'] for c in self.decisions['corrections']})
+        explicit_notes=[r for r in explicit_candidates
+            if not any(a < other['hi'] and other['lo'] < z
+                       for a,z in [r['main_range'],*r['note_ranges']]
+                       for other in native_notes)]
         for row in explicit_notes:
             skipped.extend((lo,hi,'explicit_aside_rendered_beside_owner') for lo,hi in row['note_ranges'])
         from book_pipeline.publishing.native_lateral import marginal_figures
@@ -1210,6 +1270,28 @@ class Renderer:
             [dict(lo=a,hi=b) for a,b,_ in skipped]+wrap_figures,
             {c['atom'] for c in self.decisions['corrections']},
             image_boxes={a:r['bbox'] for a,r in self.recovered_figures.items()}))
+        from book_pipeline.publishing.side_notes import include_following_display
+        from book_pipeline.publishing.native_margin_notes import observed_note_colors
+        wrap_figures = observed_note_colors(self.index, wrap_figures)
+        wrap_figures = include_following_display(self.index, wrap_figures,
+            [*self.registry, *[dict(lo=a,hi=b) for a,b,_ in skipped]],
+            {c['atom'] for c in self.decisions['corrections']})
+        wrap_joins.extend(j for row in explicit_notes for j in row.get('prose_joins', []))
+        from book_pipeline.publishing.native_prose import fragmented_native_prose
+        wrap_joins.extend(fragmented_native_prose(self.index, self.registry,
+            [dict(lo=a, hi=b) for a,b,_ in skipped] + wrap_figures + self.side_note_rows,
+            {c['atom'] for c in self.decisions['corrections']}))
+        from book_pipeline.structure.run_in_titles import run_in_title_rows
+        run_in_titles = run_in_title_rows(self.index,
+            [*self.registry, *[dict(lo=a,hi=b) for a,b,_ in skipped], *wrap_figures, *self.side_note_rows],
+            {c['atom'] for c in self.decisions['corrections']})
+        run_in_groups = {r['group'] for r in run_in_titles}
+        mixed_run_in_groups = {r['group'] for r in self.source_order_layout
+                               if r.get('method')=='native_mixed_run_in_label'}
+        run_in_groups.update(mixed_run_in_groups)
+        wrap_joins.extend(run_in_titles)
+        wrap_joins.extend(dict(r,method='native_mixed_run_in_continuation') for r in self.source_order_layout
+                          if r.get('method')=='native_mixed_run_in_label' and r.get('left') and r.get('right'))
         for row in wrap_joins:
             self.join_pairs.add((row['left'],row['right']))
             self.join_left.add(row['left']); self.join_right.add(row['right'])
@@ -1217,6 +1299,20 @@ class Renderer:
         for row in wrap_figures:
             skipped.append((row['lo'],row['hi'],'source_wrap_rendered_as_unit'))
         self.source_order_layout.extend([*wrap_joins,*wrap_figures])
+        from book_pipeline.publishing.cross_figure_prose import cross_figure_prose
+        cross_figure_rows = cross_figure_prose(self.index, self.registry,
+            self.decisions['exclusions'],
+            [dict(lo=a, hi=b) for a,b,_ in skipped] + wrap_figures + self.side_note_rows,
+            self.page_footnotes, {c['atom'] for c in self.decisions['corrections']},
+            pages=self.decisions.get('reviewed_cross_figure_pages', []))
+        prose_insertions = {r['insert_after']: r for r in cross_figure_rows}
+        prose_barriers = {r['moved_range'][1] for r in cross_figure_rows if r['figures']}
+        for row in cross_figure_rows:
+            skipped.append((*row['moved_range'], 'native_continuation_rendered_before_figures'
+                            if row['figures'] else 'native_page_continuation_rendered_with_owner'))
+            self.join_pairs.add((row['left'], row['right']))
+            self.join_left.add(row['left']); self.join_right.add(row['right'])
+        self.source_order_layout.extend(cross_figure_rows)
         ordered = sorted(positions)
         side_starts = {row['lo']: row for row in self.side_note_rows}
         side_switches = {row['mid']: row for row in self.side_note_rows}
@@ -1310,8 +1406,14 @@ class Renderer:
             t for row in wrap_figures for t in row['targets']}, {}, {}
         floating_groups={};floating_open=None;pending_reopen=False
         caption_limits = {}
+        caption_join_groups = {}
         geometric_captions = {}
         for group, indices in group_atoms.items():
+            printable_captions = [i for i in indices if self.index.atoms[i]['role'] in CAPTION_ROLES
+                                  and self.index.atoms[i]['id'] not in self.image_row_members]
+            if printable_captions:
+                caption_limits[group] = (self.index.prefix[min(printable_captions)],
+                                         self.index.prefix[max(printable_captions)+1])
             if group in self.image_row_groups:
                 continue
             image_bodies = [i for i in indices if self.index.atoms[i]["kind"] == "image"]
@@ -1416,8 +1518,16 @@ class Renderer:
                 if stop < len(self.index.atoms):
                     following=self.index.atoms[stop]
                     caption_indices=group_atoms[following['group']]
+                    if row.get('native_caption_members'):
+                        caption_indices=[i for i in caption_indices
+                                         if self.index.atoms[i]['id'] in row['native_caption_members']]
                     captions=[self.index.atoms[i] for i in caption_indices]
-                    box=following.get('block_bbox') or following.get('bbox')
+                    if row.get('native_caption_members'):
+                        boxes=[c['bbox'] for c in captions]
+                        box=[min(c[0] for c in boxes),min(c[1] for c in boxes),
+                             max(c[2] for c in boxes),max(c[3] for c in boxes)]
+                    else:
+                        box=following.get('block_bbox') or following.get('bbox')
                     proposed_hi=self.index.prefix[max(caption_indices)+1]
                     region=row['bbox']
                     if (box and all(c['role'] in {'image_caption','chart_caption','image_footnote','chart_footnote'}
@@ -1430,6 +1540,25 @@ class Renderer:
                         self.source_order_layout.append(dict(method='adjacent_source_caption_kept_with_image_row',
                             group=self.index.atoms[start]['group'],caption_group=following['group'],lo=a,hi=b))
                 floating_groups[self.index.atoms[start]['group']] = (a, b, 'figure')
+        from book_pipeline.publishing.caption_chains import continued_figure_captions
+        floating_groups, caption_chains = continued_figure_captions(self.index, floating_groups,
+            {*starts, *ends}, skipped, {c['atom'] for c in self.decisions['corrections']})
+        for row in caption_chains:
+            first = row['caption_groups'][0]
+            limits = (caption_limits[first][0], row['hi'])
+            for group in row['caption_groups']:
+                caption_join_groups[group] = first
+                caption_limits[group] = limits
+            for left, right in row['joins']:
+                self.join_pairs.add((left, right))
+                self.join_left.add(left); self.join_right.add(right)
+        self.source_order_layout.extend(caption_chains)
+        from book_pipeline.publishing.stacked_figures import stacked_figure_floats
+        for row in stacked_figure_floats(self.index, floating_groups, {*starts, *ends}, skipped):
+            for group in row['groups']:
+                floating_groups.pop(group)
+            floating_groups[row['groups'][0]] = (row['lo'], row['hi'], 'figure')
+            self.source_order_layout.append(row)
         # MinerU occasionally treats an exercise/question preceding a table as
         # its caption. A confirmed semantic object owns that paragraph's style.
         semantic_caption_groups = {
@@ -1473,6 +1602,17 @@ class Renderer:
             if not any(c['atom'] in {a['id'] for a,_,_ in self.index.fragments(p['lo'],p['hi'])}
                        for c in self.decisions['corrections'])}
         self.source_order_layout.extend(intro_spaces.values())
+        # A second Needspace at a formula introduction can override the title's
+        # no-break penalty and leave that title on the preceding page. Reserve
+        # both portions before printing either, for directly adjacent spans.
+        for heading in headings:
+            if heading['hi'] in intro_spaces and not self.heading_layout.standalone(heading):
+                level = self.heading_layout.level(heading)
+                reserve = (7 if level < 3 else 5 if level < 5 else 3) + 4
+                heading_space[heading['lo']] = max(heading_space.get(heading['lo'], 0), reserve)
+                self.source_order_layout.append(dict(method='heading_with_formula_introduction',
+                    heading=heading['anchor'], lo=heading['lo'], introduction_lo=heading['hi'],
+                    keep_baselines=reserve))
         math_rows = horizontal_math_rows(self.index, self.decisions, layout_barriers | set(note_insertions), skipped)
         math_row_starts = {r['lo']:r for r in math_rows}
         math_row_members = {c['atom']:(r,c) for r in math_rows for c in r['cells']}
@@ -1530,14 +1670,8 @@ class Renderer:
             current.append('\n\\end{'+floating_open[2]+'}\n')
             # A source-adjacent display must not overtake its preceding figure
             # and leave that figure interrupting the following prose instead.
-            stop = bisect_right(self.index.prefix, floating_open[1])-1
-            if (floating_open[2] == 'figure' and 0 < stop < len(self.index.atoms)
-                    and self.index.prefix[stop] == floating_open[1]
-                    and self.index.atoms[stop]['kind'] == 'display_math'
-                    and self.index.atoms[stop-1]['page'] == self.index.atoms[stop]['page']):
-                current.append('\\FloatBarrier\n')
-                self.source_order_layout.append(dict(method='source_adjacent_figure_before_display',
-                    lo=floating_open[0],hi=floating_open[1],following=self.index.atoms[stop]['id']))
+            if floating_open[2] == 'figure':
+                current.append(self.figure_display_barrier(floating_open[0],floating_open[1]))
             floating_open=None;pending_reopen=bool(stack);last_atom=None
         def insert_notes(position):
             for note in note_insertions.pop(position, []):
@@ -1550,6 +1684,11 @@ class Renderer:
                 pending_notes.clear()
         for lo, hi in zip(ordered, ordered[1:]):
             if floating_open and lo==floating_open[1]:close_float()
+            if lo in prose_barriers:
+                # The continuation already precedes these figures. Drain them
+                # at its old position before the next source paragraph starts.
+                current.append('\n\\par\\FloatBarrier\n')
+                last_atom = None
             if caption_open is not None and (starts[lo] or ends[lo] or lo == self.toc_position):
                 current.append("\\par\\endgroup\n"); caption_open = None
             if lo == self.toc_position:
@@ -1591,6 +1730,10 @@ class Renderer:
                     current.append('\n\\par\\clearpage\n')
                     last_atom = None
                 if o["kind"] in HEADINGS:
+                    if self.config.get('float_assets') and self.heading_layout.level(o) <= 3:
+                        # Drain the preceding section's figures before its next
+                        # heading, including figures too tall for the text page.
+                        current.append('\n\\FloatBarrier\n')
                     force_start=self.heading_layout.level(o) in self.config.get('start_page_levels',[])
                     current.append('\n\\par\\clearpage\n' if force_start else pagination.before(o))
                     if o["kind"] == "chapter":
@@ -1655,7 +1798,19 @@ class Renderer:
                 current.append('\n'+self.anchor(o['anchor'])+shown+'\n')
                 moved_anchors.add(o['anchor']);last_atom=None
             if lo in wrapped_starts:
-                current.append(self.wrapped_figure_tex(wrapped_starts[lo]))
+                row = wrapped_starts[lo]
+                heading = ''
+                if (row['method'] in {'explicit_geometric_side_note', 'native_small_font_side_note',
+                                      'native_marginal_glossary'} and current
+                        and current[-1].startswith(('\n\\BookHeading{', '\n\\BookMinorHeading{'))):
+                    preceding = next((h for h in reversed(headings) if h['hi'] <= lo), None)
+                    if (preceding and self.heading_layout.level(preceding) >= 3
+                            and not self.heading_layout.standalone(preceding)
+                            and self.index.atoms[self.index.ids[self.index.address(preceding['lo'])['atom']]]['page']
+                                == self.index.atoms[self.index.ids[self.index.address(lo)['atom']]]['page']
+                            and not self.index.text(preceding['hi'], lo).strip()):
+                        heading = current.pop()
+                current.append(self.wrapped_figure_tex(row, heading))
                 last_atom = None
             group=self.index.atoms[self.index.ids[self.index.address(lo)['atom']]]['group']
             if group in floating_groups and lo==floating_groups[group][0]:
@@ -1732,7 +1887,7 @@ class Renderer:
                     # Saved cross-page units keep their original text atoms.
                     # A page boundary between Latin words still needs a space.
                     current.append('\n')
-                if (atom.get('block_type') == 'paragraph_title' and start == 0
+                if (atom.get('block_type') == 'paragraph_title' and atom['group'] not in run_in_groups and start == 0
                         and lo == group_limits[atom['group']][0]):
                     # A recognized object title can remain ordinary source
                     # content after structural classification. It still needs
@@ -1754,7 +1909,12 @@ class Renderer:
                     if lo in prompt_spaces:
                         current.append('\n\\par\\Needspace{'+str(prompt_spaces[lo])+'\\baselineskip}\n')
                     macro = 'BookListContinuationBegin' if list_style['continuation'] else 'BookListBegin'
-                    current.append('\n\\'+macro+'{'+str(list_style['indent_em'])+'}{'+escape(list_style['label'])+'}\n')
+                    label = escape(list_style['label'])
+                    if not list_style['continuation'] and atom['kind'] == 'text':
+                        match = re.match(r'\s*'+re.escape(list_style['label']), atom['content'])
+                        if match:
+                            label = self.source_text_fragment(atom, match.end()-len(list_style['label']), match.end())
+                    current.append('\n\\'+macro+'{'+str(list_style['indent_em'])+'}{'+label+'}\n')
                 if lo in multiline_starts:
                     current.append('\n\\par\\begingroup\\leftskip=1em\\hangindent=1.4em'
                                    '\\hangafter=1\\noindent\n')
@@ -1818,11 +1978,12 @@ class Renderer:
                     value+='\n\\BookCaption{'+caption+'}\n'
                 if any(a<=lo and hi<=b for a,b in self.bold_spans):
                     value='{\\bfseries '+value+'}'
-                elif atom.get('block_type') == 'paragraph_title':
+                elif atom.get('block_type') == 'paragraph_title' and atom['group'] not in mixed_run_in_groups:
                     value='{\\bfseries '+value+'}'
                 is_caption = (atom["role"] in CAPTION_ROLES and atom["group"] not in semantic_caption_groups
                               and atom['id'] not in self.image_row_members)
-                if caption_open is not None and (not is_caption or caption_open != atom["group"]):
+                caption_key = caption_join_groups.get(atom['group'], atom['group'])
+                if caption_open is not None and (not is_caption or caption_open != caption_key):
                     current.append("\\par\\endgroup\n"); caption_open = None
                 if is_caption:
                     # A caption can alternate between text and inline formulas.
@@ -1834,7 +1995,7 @@ class Renderer:
                         value = caption_separator(last_atom, atom) + value
                     if caption_open is None:
                         value = "\n\\par\\begingroup\\centering\\noindent " + value
-                        caption_open = atom["group"]
+                        caption_open = caption_key
                     elif start == 0 and atom["kind"] == "text" and ((atom["role"].endswith("_footnote") and (last_atom is None or last_atom["role"] != atom["role"])) or re.match(r"\s*(?:[图表]\s*\d|\([a-z]\))", atom["content"])):
                         value = "\\par\\noindent " + value
                     if hi == group_hi:
@@ -1879,6 +2040,11 @@ class Renderer:
                     current.append('\n\\BookSourceRule{' + f"{rule['thickness_pt']:g}" + '}{' + rgb + '}\n')
                     self.source_order_layout.append(rule)
                 last_atom = atom
+            if hi in prose_insertions:
+                row = prose_insertions[hi]
+                for moved, start, end in self.index.fragments(*row['moved_range']):
+                    current.append('\n'+self.fragment(moved, start, end, bool(stack)))
+                    last_atom = moved
             if hi in rule_region_ends:
                 current.append('\n\\end{BookSourceInset}\n')
                 last_atom = None
@@ -1991,5 +2157,7 @@ def write_project(index, decisions, registry, references, metadata, config, dire
              "link_targets": renderer.link_targets, "assets": renderer.assets, "issues": renderer.issues,
              "tex_compatibility":renderer.tex_compatibility,"source_order_layout":renderer.source_order_layout}
     audit['footnotes'] = renderer.rendered_footnotes
+    from book_pipeline.publishing.project_assets import asset_manifest
+    audit['asset_files'] = asset_manifest(directory, renderer.assets)
     save(directory.parent / "reports/coverage.json", audit)
     return audit

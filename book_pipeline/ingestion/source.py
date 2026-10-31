@@ -8,7 +8,7 @@ import re
 
 from book_pipeline.config import digest, read
 
-MATERIALIZATION_METHOD = 'source_roles_and_equation_assets_roundtrip_v6'
+MATERIALIZATION_METHOD = 'source_roles_and_equation_assets_roundtrip_v7'
 
 
 def selected_pages(spec, page_count):
@@ -78,32 +78,34 @@ def load_source(pdf, mineru_dir, page_spec=None):
         for block in pages_by_id[number].get("blocks", []):
             group = f"p{number + 1:06d}-b{block['index']:06d}"
             leaves = []
-            def visit(node, inherited_role):
+            def visit(node, inherited_role, inherited_bbox=None):
                 if isinstance(node, str):
                     if node:
-                        leaves.append(("text", node, {}, inherited_role))
+                        leaves.append(("text", node, {'bbox': inherited_bbox}, inherited_role))
                 elif isinstance(node, list):
                     for child in node:
-                        visit(child, inherited_role)
+                        visit(child, inherited_role, inherited_bbox)
                 elif isinstance(node, dict):
                     role = node.get("type", inherited_role)
+                    bbox = node.get('bbox') if node.get('bbox') is not None else inherited_bbox
+                    meta = {**node, 'bbox': bbox}
                     if role in ("equation_inline", "inline_equation"):
-                        leaves.append(("math", flatten(node), node, inherited_role))
+                        leaves.append(("math", flatten(node), meta, inherited_role))
                     elif role == "equation":
-                        leaves.append(("display_math", flatten(node), node, role))
+                        leaves.append(("display_math", flatten(node), meta, role))
                     elif role in ("image_body", "chart_body"):
-                        leaves.append(("image", "", node, role))
+                        leaves.append(("image", "", meta, role))
                     elif role == "table_body":
-                        leaves.append(("table", flatten(node), node, role))
+                        leaves.append(("table", flatten(node), meta, role))
                     elif isinstance(node.get('content'), str):
                         if node['content']:
-                            leaves.append(('text', node['content'], node, inherited_role if role == 'text' else role))
+                            leaves.append(('text', node['content'], meta, inherited_role if role in {'text','hyperlink'} else role))
                     else:
-                        visit(node.get("content", ""), inherited_role if role == "text" else role)
+                        visit(node.get("content", ""), inherited_role if role in {'text','hyperlink'} else role, bbox)
             if block["type"] in ("image", "chart") and isinstance(block.get("content"), str):
                 leaves.append(("image", "", block, block["type"]))
             else:
-                visit(block, block["type"])
+                visit(block, block["type"], block.get('bbox'))
             for i, (kind, content, node, role) in enumerate(leaves):
                 atom = {"id": f"{group}-s{i:04d}", "group": group, "page": number,
                         "kind": kind, "role": role, "block_type": block["type"],
@@ -128,6 +130,7 @@ def load_source(pdf, mineru_dir, page_spec=None):
                 page_atoms.append(atom["id"])
         pages.append({"page": number, "atoms": page_atoms, "size_pt": dimensions[number]})
     return {"source_pdf": str(pdf), "input_sha256": source_hash,
+            "source_view_method": "hierarchical_leaf_bbox_semantic_links_v1",
             "mineru_dir": str(mineru_dir), "mineru_sha256": digest(mineru_dir / "middle_json.json"),
             "source_page_count": count, "selected_pages": chosen, "pages": pages, "atoms": atoms,
             **({"ingestion_method": manifest["method"]} if manifest.get("method") else {}),

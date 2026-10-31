@@ -64,8 +64,11 @@
 \newcommand{\BookAnchor}[1]{\hypertarget{#1}{}\def\@currentHref{#1}}
 \newcommand{\BookLink}[2]{\hyperlink{#1}{#2}}
 \fancyhf{}
-\fancyhead[CE]{\color{structurecolor}\small\leftmark}
-\fancyhead[CO]{\color{structurecolor}\small\rightmark}
+% Running titles have one bounded line independent of title length. Source
+% headings and body text remain complete at their ordinary reading size.
+\newcommand{\BookRunningHead}[1]{\adjustbox{max width=.82\headwidth,max totalheight=12pt}{\strut #1}}
+\fancyhead[CE]{\color{structurecolor}\small\BookRunningHead{\leftmark}}
+\fancyhead[CO]{\color{structurecolor}\small\BookRunningHead{\rightmark}}
 \fancyhead[LE,RO]{\color{structurecolor}\small\thepage}
 \fancyfoot[C]{\color{gray}\fontsize{8pt}{10pt}\selectfont\BookFooter}
 \renewcommand{\headrulewidth}{0.4pt}
@@ -165,13 +168,31 @@
 \newsavebox{\BookSideFirst}
 \newsavebox{\BookSideSecond}
 \newsavebox{\BookSidePair}
+\newsavebox{\BookSideWithHeading}
+\newsavebox{\BookSideNoteBox}
+\newdimen\BookSideNoteUsed
+\newdimen\BookSideNoteTarget
+% Scale the source note's vertical offset to its reflowed owner's height.
+% Measure each note before placing it so later notes never overlap it.
+\newcommand{\BookPositionedSideNote}[2]{%
+  \sbox{\BookSideNoteBox}{\begin{minipage}[t]{\linewidth}\raggedright\vspace{0pt}#2\par\end{minipage}}%
+  \BookSideNoteTarget=#1\dimexpr\ht\BookSideFirst+\dp\BookSideFirst\relax
+  \ifdim\BookSideNoteTarget>\BookSideNoteUsed
+    \vspace*{\dimexpr\BookSideNoteTarget-\BookSideNoteUsed\relax}%
+    \BookSideNoteUsed=\BookSideNoteTarget
+  \fi
+  \noindent\usebox{\BookSideNoteBox}\par\nointerlineskip
+  \advance\BookSideNoteUsed by \dimexpr\ht\BookSideNoteBox+\dp\BookSideNoteBox+3pt\relax
+  \vspace{3pt}}
 \newdimen\BookSideWidth
 \newdimen\BookSideHeight
 \newcommand{\BookSideGap}{10pt}
-\newenvironment{BookSideBySide}[3]{\par\addvspace{\BookSideGap}\begingroup
+\NewDocumentEnvironment{BookSideBySide}{O{} m m m O{}}{\par\addvspace{\BookSideGap}\begingroup
+  \def\BookSideHeading{#1}%
+  \def\BookSideFollowing{#5}%
   \edef\BookSideIndent{\the\parindent}\BookSideWidth=\linewidth
-  \def\BookSideSecondWidth{#2}\def\BookSideFirstLeft{#3}
-  \begin{lrbox}{\BookSideFirst}\begin{minipage}[t]{#1\BookSideWidth}
+  \def\BookSideSecondWidth{#3}\def\BookSideFirstLeft{#4}
+  \begin{lrbox}{\BookSideFirst}\begin{minipage}[t]{#2\BookSideWidth}
   \setlength{\parindent}{\BookSideIndent}\vspace{0pt}}
  {\par\end{minipage}\end{lrbox}%
   % Top-aligned minipages carry most of their extent as depth. Reserve the
@@ -179,6 +200,16 @@
   \sbox{\BookSidePair}{\makebox[\BookSideWidth][s]{\ifnum\BookSideFirstLeft=1
     \usebox{\BookSideFirst}\hfill\usebox{\BookSideSecond}%
   \else\usebox{\BookSideSecond}\hfill\usebox{\BookSideFirst}\fi}}%
+  % A preceding title belongs to this indivisible paragraph. Measure and ship
+  % it once with the pair; Needspace after a printed title can orphan it.
+  \def\BookSideHasExtras{0}%
+  \if\relax\expandafter\detokenize\expandafter{\BookSideHeading}\relax\else\def\BookSideHasExtras{1}\fi
+  \if\relax\expandafter\detokenize\expandafter{\BookSideFollowing}\relax\else\def\BookSideHasExtras{1}\fi
+  \ifnum\BookSideHasExtras=1
+    \sbox{\BookSideWithHeading}{\begin{minipage}{\BookSideWidth}%
+      \BookSideHeading\noindent\usebox{\BookSidePair}\par\BookSideFollowing\par\end{minipage}}%
+    \sbox{\BookSidePair}{\usebox{\BookSideWithHeading}}%
+  \fi
   \BookSideHeight=\dimexpr\ht\BookSidePair+\dp\BookSidePair\relax
   \ifinner\else\Needspace{\dimexpr\BookSideHeight+\BookSideGap\relax}\fi\noindent
   % Pending top floats are scheduled after Needspace. Expose the full extent

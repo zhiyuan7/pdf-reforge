@@ -133,6 +133,54 @@ class AutomationStateTests(unittest.TestCase):
             worker.assert_not_called()
             self.assertEqual(json.loads((self.root/'last-check.json').read_text())['status'], 'waiting')
 
+    def test_stale_implementation_flag_recovers_and_worker_makes_progress(self):
+        automation.save(self.root/'udl-priority.json', dict(implementation_in_progress=True,
+                        active_container=None, pending_untranslated_nodes=195, per_book_cny=13))
+
+        def work(*args):
+            priority = json.loads((self.root/'udl-priority.json').read_text())
+            self.assertFalse(priority['implementation_in_progress'])
+            self.assertEqual(priority['per_book_cny'], 13)
+            self.assertEqual(priority['pending_untranslated_nodes'], 195)
+            automation.save(self.root/'state.json', {**self.state(), 'active_report':'repaired.json'})
+            return 0
+
+        with patch.object(automation, 'codex', side_effect=work) as worker:
+            self.assertEqual(self.tick(), 0)
+            worker.assert_called_once()
+        self.assertEqual(self.state()['active_report'], 'repaired.json')
+        self.assertFalse(self.state()['user_priority']['implementation_in_progress'])
+
+    def test_implementation_with_live_or_unconfirmed_conversion_keeps_flag(self):
+        for result in (dict(exit_code=0, stdout='true', stderr=''),
+                       dict(exit_code=1, stdout='', stderr='Docker unavailable')):
+            with self.subTest(result=result):
+                automation.save(self.root/'udl-priority.json', dict(implementation_in_progress=True,
+                                active_container='priority-conversion'))
+                with patch.object(automation, 'run', return_value=result), \
+                     patch.object(automation, 'codex') as worker:
+                    self.assertEqual(self.tick(), 0)
+                    worker.assert_not_called()
+                self.assertTrue(json.loads((self.root/'udl-priority.json').read_text())['implementation_in_progress'])
+
+    def test_interactive_lock_prevents_flag_recovery(self):
+        path = self.root/'udl-priority.json'
+        automation.save(path, dict(implementation_in_progress=True))
+        before = path.read_bytes()
+        with (self.root/'workflow.lock').open('a') as lock, patch.object(automation, 'codex') as worker:
+            fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
+            self.assertEqual(self.tick(), 0)
+            worker.assert_not_called()
+        self.assertEqual(path.read_bytes(), before)
+
+    def test_manual_iteration_also_waits_for_running_conversion(self):
+        automation.save(self.root/'state.json', dict(active_container='cpu-conversion'))
+        with patch.object(automation, 'run', return_value=dict(exit_code=0, stdout='true', stderr='')), \
+             patch.object(automation, 'codex') as worker, \
+             patch('sys.argv', ['automation', 'iterate']):
+            self.assertEqual(automation.main(), 0)
+            worker.assert_not_called()
+
     def test_running_background_conversion_is_waited_for(self):
         automation.save(self.root/'state.json', dict(active_container='pdf-reforge-benchmark'))
         with patch.object(automation, 'run', return_value=dict(exit_code=0, stdout='true', stderr='')), \
